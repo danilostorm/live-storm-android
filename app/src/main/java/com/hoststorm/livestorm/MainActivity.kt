@@ -2,16 +2,19 @@ package com.hoststorm.livestorm
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.media.MediaCodecInfo
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Size
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.View
 import android.view.WindowManager
@@ -34,6 +37,8 @@ import java.util.Locale
 class MainActivity : AppCompatActivity(), ConnectChecker {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var cameraProController: CameraProController
+    private lateinit var overlayController: OverlayController
 
     private val stream: GenericStream by lazy {
         GenericStream(applicationContext, this).apply {
@@ -93,6 +98,46 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        cameraProController = CameraProController(
+            activity = this,
+            preview = binding.cameraPreview,
+            focusIndicator = binding.focusIndicator,
+            cameraProvider = { stream.videoSource as? Camera2Source },
+            resolutionProvider = { Size(profile.width, profile.height) },
+            targetFpsProvider = { profile.fps },
+            onZoomChanged = { zoom -> updateZoomLabel(zoom) },
+            onInfo = { message ->
+                binding.capabilityHint.text = message
+                showToast(message)
+            },
+            onExperimental60Changed = {
+                updateProfileUi()
+                if (profile.fps == 60 && !stream.isStreaming && !connecting) {
+                    prepareStream(showResult = true)
+                }
+            }
+        )
+        overlayController = OverlayController(
+            activity = this,
+            streamProvider = { stream },
+            geometryProvider = {
+                OverlayController.VideoGeometry(
+                    width = profile.width,
+                    height = profile.height,
+                    rotation = profile.rotation,
+                    fps = profile.fps
+                )
+            },
+            onInfo = { message ->
+                binding.capabilityHint.text = message
+                showToast(message)
+            },
+            onStateChanged = { active -> updateOverlayButton(active) }
+        )
+        cameraProController.attachPreviewControls()
+        updateZoomLabel(1f)
+        updateOverlayButton(overlayController.enabled)
 
         restoreProfile()
         applyRequestedOrientationForMode(lockForLive = false)
@@ -156,6 +201,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         binding.switchCameraButton.setOnClickListener { switchCamera() }
         binding.flashButton.setOnClickListener { toggleFlash() }
         binding.micButton.setOnClickListener { toggleMicrophone() }
+        binding.proButton.setOnClickListener { cameraProController.showProDialog() }
+        binding.overlayButton.setOnClickListener { overlayController.showDialog() }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::cameraProController.isInitialized && cameraProController.handleVolumeKey(event)) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun selectResolution(width: Int, height: Int) {
@@ -170,7 +224,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         if (!canChangeProfile()) return
         if (profile.fps == fps) return
 
-        if (fps == 60 && maxSupportedFps() < 60) {
+        if (fps == 60 && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled) {
             showToast(
                 "Esta câmera não entrega 60 FPS reais em ${profile.resolutionLabel}. " +
                     "Experimente 720p ou a câmera traseira."
@@ -230,7 +284,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             stopAndReleaseCurrentSession()
 
             val cameraMaxFps = maxSupportedFps()
-            if (profile.fps == 60 && cameraMaxFps < 60) {
+            if (profile.fps == 60 && cameraMaxFps < 60 && !cameraProController.experimental60Enabled) {
                 setStatus(Status.ERROR, "60 FPS INDISPONÍVEL")
                 binding.capabilityHint.text =
                     "A câmera atual chega a $cameraMaxFps FPS em ${profile.resolutionLabel}"
@@ -289,6 +343,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun stopAndReleaseCurrentSession() {
+        if (::overlayController.isInitialized) overlayController.clear()
+        if (::cameraProController.isInitialized) cameraProController.release()
         try {
             if (stream.isStreaming) stream.stopStream()
         } catch (_: Exception) {
@@ -344,6 +400,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
         try {
             stream.startPreview(binding.cameraPreview)
+            cameraProController.applyAfterCameraStart()
+            overlayController.applyIfConfigured()
         } catch (error: Exception) {
             showToast("Não foi possível abrir a prévia: ${error.message}")
         }
@@ -358,7 +416,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             return
         }
 
-        if (profile.fps == 60 && maxSupportedFps() < 60) {
+        if (profile.fps == 60 && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled) {
             streamPrepared = false
             setStatus(Status.ERROR, "60 FPS INDISPONÍVEL")
             showToast("A câmera atual não suporta 60 FPS reais neste perfil.")
@@ -423,6 +481,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             if (!liveNow && stream.isOnPreview) stream.stopPreview()
 
             camera.switchCamera()
+            binding.cameraPreview.postDelayed({ cameraProController.applyAfterCameraStart() }, 500L)
             binding.flashButton.setBackgroundResource(R.drawable.bg_icon_button)
             val supported = maxSupportedFps()
 
@@ -545,6 +604,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val current = loadStreamSettings()
         dialogBinding.streamKeyInput.setText(current.streamKey)
         dialogBinding.serverInput.setText(current.server)
+        dialogBinding.connectYoutubeButton.setOnClickListener { showYoutubeConnectionInfo() }
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("Transmissão direta para o YouTube")
@@ -577,6 +637,37 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         dialog.show()
     }
 
+    private fun showYoutubeConnectionInfo() {
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Conectar conta YouTube")
+            .setMessage(
+                "Uma chave de API não permite acessar ou criar lives na sua conta. " +
+                    "O Google exige login OAuth 2.0 com o escopo youtube.force-ssl, " +
+                    "um Client ID Android vinculado ao pacote do Live Storm e ao SHA-1 da assinatura.\n\n" +
+                    "A transmissão por chave RTMPS continua funcionando. O login automático será " +
+                    "ativado quando o Client ID do projeto Google Cloud for cadastrado no aplicativo."
+            )
+            .setNeutralButton("Abrir YouTube Studio") { _, _ ->
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://studio.youtube.com")))
+                }
+            }
+            .setPositiveButton("Entendi", null)
+            .create()
+        dialog.show()
+    }
+
+    private fun updateZoomLabel(zoom: Float) {
+        binding.zoomLabel.text = String.format(Locale.getDefault(), "%.1f×", zoom)
+    }
+
+    private fun updateOverlayButton(active: Boolean) {
+        binding.overlayButton.text = if (active) "WEB✓" else "WEB"
+        binding.overlayButton.setBackgroundResource(
+            if (active) R.drawable.bg_icon_button_active else R.drawable.bg_icon_button
+        )
+    }
+
     private fun updateProfileUi() {
         setChip(binding.resolution720Button, profile.width == 1280)
         setChip(binding.resolution1080Button, profile.width == 1920)
@@ -592,7 +683,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             profile.orientationMode == OrientationMode.LANDSCAPE
         )
 
-        binding.fps60Button.alpha = if (maxSupportedFps() >= 60) 1f else 0.55f
+        val reported60 = maxSupportedFps() >= 60
+        binding.fps60Button.alpha =
+            if (reported60 || cameraProController.experimental60Enabled) 1f else 0.55f
         binding.profileSummary.text =
             "${profile.resolutionLabel} • ${profile.fps} FPS • ${profile.aspectLabel} • ${profile.bitrateLabel}"
     }
@@ -615,7 +708,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             it.isEnabled = enabled
             it.alpha = if (enabled) 1f else 0.45f
         }
-        if (enabled && maxSupportedFps() < 60) binding.fps60Button.alpha = 0.55f
+        if (
+            enabled && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled
+        ) binding.fps60Button.alpha = 0.55f
     }
 
     private fun updateStartButton() {
@@ -827,6 +922,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
     override fun onDestroy() {
         timerHandler.removeCallbacksAndMessages(null)
+        if (::overlayController.isInitialized) overlayController.release()
+        if (::cameraProController.isInitialized) cameraProController.release()
         try {
             stream.release()
         } catch (_: Exception) {
