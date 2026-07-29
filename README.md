@@ -99,3 +99,20 @@ O GitHub Actions também gera um APK de debug automaticamente. Abra a aba **Acti
 ## Licença da dependência
 
 O projeto usa [RootEncoder](https://github.com/pedroSG94/RootEncoder), distribuído sob Apache License 2.0.
+
+
+## Modo Pro e overlays
+
+- Zoom por gesto de pinça, controle na tela e teclas de volume.
+- Foco contínuo, foco por toque com trava e foco manual por distância.
+- Compensação de exposição, OIS e EIS quando disponibilizados pela Camera2.
+- Diagnóstico das faixas de FPS expostas pelo fabricante.
+- Modo experimental de 60 FPS, sempre acompanhado do medidor de FPS real.
+- Overlay web por URL HTTPS, renderizado dentro do vídeo transmitido.
+
+### Conexão com a conta do YouTube
+
+A API key não autoriza operações na conta. Para criar transmissões, streams e obter a
+chave automaticamente, o aplicativo precisará de OAuth 2.0 com o escopo
+`youtube.force-ssl`, Client ID Android, pacote e SHA-1 da assinatura. Até essa
+configuração ser adicionada, a transmissão direta por RTMPS e chave continua ativa.

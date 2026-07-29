@@ -159,7 +159,7 @@ class OverlayController(
         webView.loadUrl(url)
 
         val filter = AndroidViewFilterRender().apply {
-            targetFps = prefs.getInt(KEY_FPS, 20).coerceIn(15, 30)
+            // RootEncoder 2.7.2 usa a cadência interna padrão do filtro.
             view = webView
             setPosition(0f, 0f)
             setScale(100f, 100f)
