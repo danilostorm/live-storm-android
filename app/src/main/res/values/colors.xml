@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="storm_bg">#070B17</color>
+    <color name="storm_purple">#8B5CF6</color>
+    <color name="storm_pink">#EC4899</color>
+    <color name="storm_red">#FF3158</color>
+    <color name="storm_green">#37E29A</color>
+    <color name="storm_muted">#AAB4D4</color>
+    <color name="storm_card">#CC12182A</color>
+    <color name="storm_warning">#FFD27A</color>
+</resources>
