@@ -27,6 +27,13 @@ jobs:
             echo "Patch already applied"
             exit 0
           fi
+          python - <<'PY'
+          from pathlib import Path
+          patch = Path('.github/orientation-auto.patch')
+          data = patch.read_bytes()
+          if not data.endswith(b'\n'):
+              patch.write_bytes(data + b'\n')
+          PY
           git apply --check .github/orientation-auto.patch
           git apply .github/orientation-auto.patch
           python - <<'PY'
