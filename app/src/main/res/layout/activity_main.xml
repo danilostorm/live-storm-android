@@ -46,15 +46,13 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <TextView
-            android:layout_width="42dp"
-            android:layout_height="42dp"
-            android:background="@drawable/bg_logo"
-            android:gravity="center"
-            android:text="LS"
-            android:textColor="@color/white"
-            android:textSize="15sp"
-            android:textStyle="bold" />
+        <ImageView
+  android:layout_width="42dp"
+  android:layout_height="42dp"
+  android:adjustViewBounds="true"
+  android:contentDescription="Live Storm"
+  android:scaleType="centerCrop"
+  android:src="@drawable/app_logo_badge" />
 
         <LinearLayout
             android:layout_width="0dp"
