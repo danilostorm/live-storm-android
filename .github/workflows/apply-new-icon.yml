@@ -82,24 +82,24 @@ jobs:
           layout = res / 'layout/activity_main.xml'
           content = layout.read_text(encoding='utf-8')
           old = '''        <TextView
-              android:layout_width="42dp"
-              android:layout_height="42dp"
-              android:background="@drawable/bg_logo"
-              android:gravity="center"
-              android:text="LS"
-              android:textColor="@color/white"
-              android:textSize="15sp"
-              android:textStyle="bold" />'''.replace('              ', '            ')
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:background="@drawable/bg_logo"
+            android:gravity="center"
+            android:text="LS"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            android:textStyle="bold" />'''
           new = '''        <ImageView
-              android:layout_width="42dp"
-              android:layout_height="42dp"
-              android:adjustViewBounds="true"
-              android:contentDescription="Live Storm"
-              android:scaleType="centerCrop"
-              android:src="@drawable/app_logo_badge" />'''.replace('              ', '            ')
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="Live Storm"
+            android:scaleType="centerCrop"
+            android:src="@drawable/app_logo_badge" />'''
           if old not in content:
               raise SystemExit('Bloco antigo do logo não encontrado no layout')
-          layout.write_text(content.replace(old, new), encoding='utf-8')
+          layout.write_text(content.replace(old, new, 1), encoding='utf-8')
 
           ET.parse(layout)
           ET.parse(res / 'mipmap-anydpi-v26/ic_launcher.xml')
