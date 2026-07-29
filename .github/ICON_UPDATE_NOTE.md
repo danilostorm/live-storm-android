@@ -1,1 +1,0 @@
-Build temporário do novo ícone visual do Live Storm.
