@@ -1,0 +1,46 @@
+name: Apply orientation auto
+
+on:
+  push:
+    branches: [agent/orientacao-auto]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: agent/orientacao-auto
+          fetch-depth: 0
+
+      - name: Apply orientation patch
+        run: |
+          if grep -q "autoOrientationButton" app/src/main/java/com/hoststorm/livestorm/MainActivity.kt; then
+            echo "Patch already applied"
+            exit 0
+          fi
+          git apply --check .github/orientation-auto.patch
+          git apply .github/orientation-auto.patch
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          ET.parse('app/src/main/res/layout/activity_main.xml')
+          ET.parse('app/src/main/AndroidManifest.xml')
+          print('XML validado')
+          PY
+
+      - name: Commit source changes
+        run: |
+          if git diff --quiet -- app/src/main/java/com/hoststorm/livestorm/MainActivity.kt app/src/main/res/layout/activity_main.xml README.md; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/hoststorm/livestorm/MainActivity.kt app/src/main/res/layout/activity_main.xml README.md
+          git commit -m "Adiciona orientação automática da live"
+          git push origin HEAD:agent/orientacao-auto
