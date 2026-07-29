@@ -1,0 +1,1 @@
+Disparo da compilação do APK com o novo ícone.
