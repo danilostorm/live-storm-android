@@ -2,7 +2,9 @@ package com.hoststorm.livestorm
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.media.MediaCodecInfo
 import android.os.Bundle
@@ -37,7 +39,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         GenericStream(applicationContext, this).apply {
             setVideoCodec(VideoCodec.H264)
             setAudioCodec(AudioCodec.AAC)
-            getGlInterface().autoHandleOrientation = true
+            getGlInterface().autoHandleOrientation = false
             getStreamClient().setReTries(10)
             getStreamClient().setSocketTimeout(10_000)
             getStreamClient().setCheckServerAlive(true)
@@ -93,6 +95,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         restoreProfile()
+        applyRequestedOrientationForMode(lockForLive = false)
         setupPreview()
         setupActions()
         updateProfileUi()
@@ -140,8 +143,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         binding.resolution1080Button.setOnClickListener { selectResolution(1920, 1080) }
         binding.fps30Button.setOnClickListener { selectFps(30) }
         binding.fps60Button.setOnClickListener { selectFps(60) }
-        binding.horizontalButton.setOnClickListener { selectOrientation(vertical = false) }
-        binding.verticalButton.setOnClickListener { selectOrientation(vertical = true) }
+        binding.autoOrientationButton.setOnClickListener {
+            selectOrientation(OrientationMode.AUTO)
+        }
+        binding.portraitOrientationButton.setOnClickListener {
+            selectOrientation(OrientationMode.PORTRAIT)
+        }
+        binding.landscapeOrientationButton.setOnClickListener {
+            selectOrientation(OrientationMode.LANDSCAPE)
+        }
 
         binding.switchCameraButton.setOnClickListener { switchCamera() }
         binding.flashButton.setOnClickListener { toggleFlash() }
@@ -174,12 +184,27 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         prepareStream(showResult = true)
     }
 
-    private fun selectOrientation(vertical: Boolean) {
+    private fun selectOrientation(mode: OrientationMode) {
         if (!canChangeProfile()) return
-        if (profile.vertical == vertical) return
-        profile = profile.copy(vertical = vertical)
+
+        val resolvedVertical = when (mode) {
+            OrientationMode.AUTO -> currentDeviceIsPortrait()
+            OrientationMode.PORTRAIT -> true
+            OrientationMode.LANDSCAPE -> false
+        }
+        if (profile.orientationMode == mode && profile.vertical == resolvedVertical) return
+
+        profile = profile.copy(orientationMode = mode, vertical = resolvedVertical)
         saveProfile()
-        prepareStream(showResult = true)
+        applyRequestedOrientationForMode(lockForLive = false)
+        updateProfileUi()
+
+        // Ao sair de uma orientação fixa para Automático, damos tempo para o Android
+        // aplicar a posição física atual antes de preparar novamente câmera e encoder.
+        binding.root.postDelayed({
+            syncAutomaticOrientation()
+            prepareStream(showResult = true)
+        }, if (mode == OrientationMode.AUTO) 250L else 0L)
     }
 
     private fun canChangeProfile(): Boolean {
@@ -193,6 +218,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun prepareStream(showResult: Boolean) {
         if (!hasPermissions()) return
 
+        syncAutomaticOrientation()
         binding.preparingProgress.visibility = View.VISIBLE
         setProfileControlsEnabled(false)
         streamPrepared = false
@@ -228,9 +254,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 startPreviewWhenReady()
                 setStatus(Status.IDLE, "PRONTO")
                 binding.capabilityHint.text = if (profile.fps == 60) {
-                    "Perfil YouTube ${profile.resolutionLabel}60 pronto • keyframe 2 s"
+                    "Perfil YouTube ${profile.resolutionLabel}60 • ${profile.aspectLabel} • keyframe 2 s"
                 } else {
-                    "Perfil YouTube ${profile.resolutionLabel}30 pronto • keyframe 2 s"
+                    "Perfil YouTube ${profile.resolutionLabel}30 • ${profile.aspectLabel} • keyframe 2 s"
                 }
                 if (showResult) {
                     showToast(
@@ -339,10 +365,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             return
         }
 
+        if (profile.orientationMode == OrientationMode.AUTO) {
+            val orientationChanged = syncAutomaticOrientation()
+            if (orientationChanged) streamPrepared = false
+        }
+
         if (!streamPrepared) {
             prepareStream(showResult = true)
             if (!streamPrepared) return
         }
+
+        applyRequestedOrientationForMode(lockForLive = true)
 
         try {
             stable60Samples = 0
@@ -359,6 +392,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             setProfileControlsEnabled(true)
             setStatus(Status.ERROR, "FALHA")
             updateStartButton()
+            restoreAutomaticOrientationAfterLive()
             showToast("Não foi possível iniciar: ${error.message}")
         }
     }
@@ -378,6 +412,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         setStatus(Status.IDLE, "PRONTO")
         setProfileControlsEnabled(true)
         updateStartButton()
+        restoreAutomaticOrientationAfterLive()
         startPreviewWhenReady()
     }
 
@@ -547,8 +582,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         setChip(binding.resolution1080Button, profile.width == 1920)
         setChip(binding.fps30Button, profile.fps == 30)
         setChip(binding.fps60Button, profile.fps == 60)
-        setChip(binding.horizontalButton, !profile.vertical)
-        setChip(binding.verticalButton, profile.vertical)
+        setChip(binding.autoOrientationButton, profile.orientationMode == OrientationMode.AUTO)
+        setChip(
+            binding.portraitOrientationButton,
+            profile.orientationMode == OrientationMode.PORTRAIT
+        )
+        setChip(
+            binding.landscapeOrientationButton,
+            profile.orientationMode == OrientationMode.LANDSCAPE
+        )
 
         binding.fps60Button.alpha = if (maxSupportedFps() >= 60) 1f else 0.55f
         binding.profileSummary.text =
@@ -566,8 +608,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             binding.resolution1080Button,
             binding.fps30Button,
             binding.fps60Button,
-            binding.horizontalButton,
-            binding.verticalButton
+            binding.autoOrientationButton,
+            binding.portraitOrientationButton,
+            binding.landscapeOrientationButton
         ).forEach {
             it.isEnabled = enabled
             it.alpha = if (enabled) 1f else 0.45f
@@ -629,6 +672,63 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         timerHandler.removeCallbacks(timerRunnable)
         liveStartedElapsed = 0L
         binding.liveTimer.text = "00:00:00"
+    }
+
+    private fun currentDeviceIsPortrait(
+        configuration: Configuration = resources.configuration
+    ): Boolean {
+        return configuration.orientation != Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    private fun syncAutomaticOrientation(): Boolean {
+        if (profile.orientationMode != OrientationMode.AUTO) return false
+        val verticalNow = currentDeviceIsPortrait()
+        if (profile.vertical == verticalNow) return false
+
+        profile = profile.copy(vertical = verticalNow)
+        saveProfile()
+        updateProfileUi()
+        return true
+    }
+
+    private fun applyRequestedOrientationForMode(lockForLive: Boolean) {
+        requestedOrientation = when (profile.orientationMode) {
+            OrientationMode.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            OrientationMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            OrientationMode.AUTO -> {
+                if (!lockForLive) {
+                    ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                } else if (profile.vertical) {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                }
+            }
+        }
+    }
+
+    private fun restoreAutomaticOrientationAfterLive() {
+        if (profile.orientationMode == OrientationMode.AUTO) {
+            applyRequestedOrientationForMode(lockForLive = false)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::binding.isInitialized) return
+        if (profile.orientationMode != OrientationMode.AUTO) return
+        if (stream.isStreaming || connecting) return
+
+        val verticalNow = currentDeviceIsPortrait(newConfig)
+        if (profile.vertical == verticalNow) {
+            updateProfileUi()
+            return
+        }
+
+        profile = profile.copy(vertical = verticalNow)
+        saveProfile()
+        updateProfileUi()
+        binding.root.post { prepareStream(showResult = false) }
     }
 
     private fun hasPermissions(): Boolean {
@@ -705,6 +805,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 connected = false
                 connecting = false
                 stopTimer()
+                restoreAutomaticOrientationAfterLive()
                 setStatus(Status.IDLE, "DESCONECTADO")
                 setProfileControlsEnabled(true)
                 updateStartButton()
@@ -752,11 +853,25 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
     private fun restoreProfile() {
         val prefs = getSharedPreferences(PREF_PROFILE, Context.MODE_PRIVATE)
+        val legacyVertical = prefs.getBoolean("vertical", false)
+        val fallbackMode = if (legacyVertical) OrientationMode.PORTRAIT else OrientationMode.LANDSCAPE
+        val orientationMode = runCatching {
+            OrientationMode.valueOf(
+                prefs.getString("orientation_mode", fallbackMode.name) ?: fallbackMode.name
+            )
+        }.getOrDefault(fallbackMode)
+        val resolvedVertical = when (orientationMode) {
+            OrientationMode.AUTO -> currentDeviceIsPortrait()
+            OrientationMode.PORTRAIT -> true
+            OrientationMode.LANDSCAPE -> false
+        }
+
         profile = StreamProfile(
             width = prefs.getInt("width", 1920),
             height = prefs.getInt("height", 1080),
             fps = prefs.getInt("fps", 60).let { if (it == 30) 30 else 60 },
-            vertical = prefs.getBoolean("vertical", false)
+            orientationMode = orientationMode,
+            vertical = resolvedVertical
         )
     }
 
@@ -766,6 +881,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             .putInt("width", profile.width)
             .putInt("height", profile.height)
             .putInt("fps", profile.fps)
+            .putString("orientation_mode", profile.orientationMode.name)
             .putBoolean("vertical", profile.vertical)
             .apply()
     }
@@ -774,11 +890,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val width: Int = 1920,
         val height: Int = 1080,
         val fps: Int = 60,
+        val orientationMode: OrientationMode = OrientationMode.LANDSCAPE,
         val vertical: Boolean = false
     ) {
         val rotation: Int get() = if (vertical) 90 else 0
         val resolutionLabel: String get() = if (width >= 1920) "1080p" else "720p"
-        val aspectLabel: String get() = if (vertical) "9:16" else "16:9"
+        val aspectLabel: String
+            get() = when (orientationMode) {
+                OrientationMode.AUTO -> "Auto → ${if (vertical) "9:16" else "16:9"}"
+                OrientationMode.PORTRAIT -> "Retrato 9:16"
+                OrientationMode.LANDSCAPE -> "Paisagem 16:9"
+            }
         val videoBitrate: Int
             get() = when {
                 width >= 1920 && fps >= 60 -> 12_000_000
@@ -812,6 +934,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             return null
         }
     }
+
+    private enum class OrientationMode { AUTO, PORTRAIT, LANDSCAPE }
 
     private enum class Status { IDLE, CONNECTING, LIVE, ERROR }
 

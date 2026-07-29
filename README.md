@@ -15,7 +15,7 @@ O aplicativo não altera uma live de 60 FPS para 30 FPS silenciosamente. Quando 
 - Microfone, mute e flash.
 - 720p e 1080p.
 - 30 FPS e 60 FPS.
-- Formato horizontal 16:9 e vertical 9:16.
+- Orientação Retrato 9:16, Paisagem 16:9 e modo Automático.
 - Perfil H.264 High, AAC estéreo e keyframe a cada 2 segundos.
 - Bitrates preparados para o YouTube:
   - 1080p60: 12 Mb/s.
@@ -35,7 +35,7 @@ O aplicativo não altera uma live de 60 FPS para 30 FPS silenciosamente. Quando 
 3. No aplicativo, toque na engrenagem.
 4. Cole a chave do YouTube.
 5. Mantenha o URL RTMPS padrão ou cole o endereço RTMPS exibido pelo YouTube Studio.
-6. Selecione resolução, 30/60 FPS e orientação.
+6. Selecione resolução, 30/60 FPS e Retrato, Paisagem ou Automático.
 7. Toque em **Iniciar no YouTube**.
 8. Confirme a prévia e inicie/publice a live na Sala de Controle ao Vivo, conforme a configuração do canal.
 
