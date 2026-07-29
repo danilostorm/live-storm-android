@@ -1,0 +1,1 @@
+Atualização temporária para aplicar o novo ícone do Live Storm e gerar o APK de validação.
