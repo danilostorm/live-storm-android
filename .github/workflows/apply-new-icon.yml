@@ -1,0 +1,147 @@
+name: Apply new Live Storm icon
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/icon-source.b64'
+      - '.github/workflows/apply-new-icon.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout icon branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Install image tools
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Generate Android icons
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import base64
+          import xml.etree.ElementTree as ET
+
+          root = Path('.')
+          res = root / 'app/src/main/res'
+          source = Path('/tmp/live-storm-icon.webp')
+          source.write_bytes(base64.b64decode((root / '.github/icon-source.b64').read_text().strip()))
+
+          image = Image.open(source).convert('RGBA')
+          side = min(image.size)
+          left = (image.width - side) // 2
+          top = (image.height - side) // 2
+          image = image.crop((left, top, left + side, top + side))
+
+          drawable = res / 'drawable'
+          drawable.mkdir(parents=True, exist_ok=True)
+
+          old_foreground = drawable / 'ic_launcher_foreground.xml'
+          if old_foreground.exists():
+              old_foreground.unlink()
+
+          canvas = Image.new('RGBA', (432, 432), (0, 0, 0, 0))
+          foreground = image.resize((360, 360), Image.Resampling.LANCZOS)
+          canvas.alpha_composite(foreground, ((432 - 360) // 2, (432 - 360) // 2))
+          canvas.save(drawable / 'ic_launcher_foreground.png', optimize=True)
+
+          image.resize((168, 168), Image.Resampling.LANCZOS).save(
+              drawable / 'app_logo_badge.png', optimize=True
+          )
+
+          sizes = {
+              'mipmap-mdpi': 48,
+              'mipmap-hdpi': 72,
+              'mipmap-xhdpi': 96,
+              'mipmap-xxhdpi': 144,
+              'mipmap-xxxhdpi': 192,
+          }
+          for folder, size in sizes.items():
+              target = res / folder
+              target.mkdir(parents=True, exist_ok=True)
+              for legacy in ('ic_launcher.xml', 'ic_launcher_round.xml'):
+                  legacy_file = target / legacy
+                  if legacy_file.exists():
+                      legacy_file.unlink()
+              resized = image.resize((size, size), Image.Resampling.LANCZOS)
+              resized.save(target / 'ic_launcher.png', optimize=True)
+              resized.save(target / 'ic_launcher_round.png', optimize=True)
+
+          layout = res / 'layout/activity_main.xml'
+          content = layout.read_text(encoding='utf-8')
+          old = '''        <TextView
+              android:layout_width="42dp"
+              android:layout_height="42dp"
+              android:background="@drawable/bg_logo"
+              android:gravity="center"
+              android:text="LS"
+              android:textColor="@color/white"
+              android:textSize="15sp"
+              android:textStyle="bold" />'''.replace('              ', '            ')
+          new = '''        <ImageView
+              android:layout_width="42dp"
+              android:layout_height="42dp"
+              android:adjustViewBounds="true"
+              android:contentDescription="Live Storm"
+              android:scaleType="centerCrop"
+              android:src="@drawable/app_logo_badge" />'''.replace('              ', '            ')
+          if old not in content:
+              raise SystemExit('Bloco antigo do logo não encontrado no layout')
+          layout.write_text(content.replace(old, new), encoding='utf-8')
+
+          ET.parse(layout)
+          ET.parse(res / 'mipmap-anydpi-v26/ic_launcher.xml')
+          ET.parse(res / 'mipmap-anydpi-v26/ic_launcher_round.xml')
+          print('Ícones e logo interno gerados com sucesso')
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Build updated APK
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Upload updated APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-storm-new-icon-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Commit generated icon assets
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/res
+          if git diff --cached --quiet; then
+            echo 'No icon changes to commit'
+            exit 0
+          fi
+          git commit -m 'Atualiza ícone e identidade visual do app'
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
