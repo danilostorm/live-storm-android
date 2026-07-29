@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/overlayEnabledSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ativar overlay na transmissão"
+            android:textColor="@color/white"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Cole uma página HTTPS transparente, como placar, alertas, widgets ou animações. O conteúdo é renderizado dentro do vídeo enviado ao YouTube."
+            android:textColor="@color/storm_muted"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="URL do overlay"
+            android:textColor="@color/white"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/overlayUrlInput"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_field"
+            android:hint="https://seusite.com/overlay"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:textColor="@color/white"
+            android:textColorHint="#7F8AA8" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Atualização do overlay"
+                android:textColor="@color/white"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/overlayFpsValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="20 FPS"
+                android:textColor="@color/storm_green"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/overlayFpsSeek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:progressTint="@color/storm_purple"
+            android:thumbTint="@color/storm_pink" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Overlays simples funcionam bem entre 15 e 20 FPS. Use 30 FPS somente para animações rápidas, pois isso aumenta o uso de CPU e bateria."
+            android:textColor="@color/storm_muted"
+            android:textSize="10sp" />
+    </LinearLayout>
+</ScrollView>
