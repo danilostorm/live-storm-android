@@ -11,4 +11,17 @@ if broken not in main:
     raise RuntimeError("Trecho do aviso OAuth não encontrado para correção")
 main_path.write_text(main.replace(broken, fixed, 1), encoding="utf-8")
 
-overlay = overlay_path.read_text(encoding="utf-8")n
+overlay = overlay_path.read_text(encoding="utf-8")
+unsupported = "            targetFps = prefs.getInt(KEY_FPS, 20).coerceIn(15, 30)\n"
+if unsupported not in overlay:
+    raise RuntimeError("Propriedade targetFps não encontrada para compatibilidade")
+overlay_path.write_text(
+    overlay.replace(
+        unsupported,
+        "            // RootEncoder 2.7.2 usa a cadência interna padrão do filtro.\n",
+        1,
+    ),
+    encoding="utf-8",
+)
+
+print("Correções de compatibilidade Pro aplicadas")
