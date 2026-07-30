@@ -27,9 +27,9 @@ import kotlin.math.roundToInt
 /**
  * Controles de câmera que continuam funcionando durante a prévia e a transmissão.
  *
- * O modo experimental de 60 FPS não mascara o resultado: ele apenas ignora a
- * limitação informada pelo fabricante e tenta solicitar 60 FPS. O MainActivity
- * continua medindo os quadros realmente codificados.
+ * O modo de 60 FPS nativo tenta a faixa real de 60 quadros mesmo quando o
+ * fabricante omite esse perfil da consulta Camera2. A validação é memorizada por
+ * câmera e resolução depois que o encoder sustenta 55+ FPS durante a live.
  */
 class CameraProController(
     private val activity: AppCompatActivity,
@@ -39,8 +39,7 @@ class CameraProController(
     private val resolutionProvider: () -> Size,
     private val targetFpsProvider: () -> Int,
     private val onZoomChanged: (Float) -> Unit,
-    private val onInfo: (String) -> Unit,
-    private val onExperimental60Changed: (Boolean) -> Unit
+    private val onInfo: (String) -> Unit
 ) {
 
     private val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -57,12 +56,6 @@ class CameraProController(
     private var touchDownX = 0f
     private var touchDownY = 0f
     private var multiTouchUsed = false
-
-    var experimental60Enabled: Boolean
-        get() = prefs.getBoolean(KEY_EXPERIMENTAL_60, false)
-        private set(value) {
-            prefs.edit().putBoolean(KEY_EXPERIMENTAL_60, value).apply()
-        }
 
     private var volumeZoomEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOLUME_ZOOM, true)
@@ -126,8 +119,8 @@ class CameraProController(
             runCatching { camera.setExposure(exposureValue) }
             applyFocusMode(showMessage = false)
             applyStabilizationFromPrefs()
-            if (targetFpsProvider() == 60 && experimental60Enabled) {
-                applyExperimental60Request()
+            if (targetFpsProvider() == 60) {
+                applyNative60Request()
             }
         }, 450L)
     }
@@ -151,8 +144,11 @@ class CameraProController(
         val exposureValueText = view.findViewById<TextView>(R.id.exposureValueText)
         val oisSwitch = view.findViewById<SwitchMaterial>(R.id.oisSwitch)
         val eisSwitch = view.findViewById<SwitchMaterial>(R.id.eisSwitch)
-        val experimental60Switch = view.findViewById<SwitchMaterial>(R.id.experimental60Switch)
         val volumeZoomSwitch = view.findViewById<SwitchMaterial>(R.id.volumeZoomSwitch)
+        val native60Info = view.findViewById<TextView>(R.id.native60Info)
+        val preset1Button = view.findViewById<TextView>(R.id.preset1Button)
+        val preset2Button = view.findViewById<TextView>(R.id.preset2Button)
+        val preset3Button = view.findViewById<TextView>(R.id.preset3Button)
 
         diagnosticText.text = buildDiagnostics()
         setupZoomControls(zoomSeek, zoomValueText)
@@ -168,8 +164,11 @@ class CameraProController(
         val camera = runningCamera()
         oisSwitch.isChecked = camera?.isOpticalVideoStabilizationEnabled() == true
         eisSwitch.isChecked = camera?.isVideoStabilizationEnabled() == true
-        experimental60Switch.isChecked = experimental60Enabled
         volumeZoomSwitch.isChecked = volumeZoomEnabled
+        native60Info.text = native60Status()
+        setupPresetButton(preset1Button, 1)
+        setupPresetButton(preset2Button, 2)
+        setupPresetButton(preset3Button, 3)
 
         oisSwitch.setOnCheckedChangeListener { button, checked ->
             val currentCamera = runningCamera()
@@ -202,14 +201,6 @@ class CameraProController(
                 onInfo("A câmera atual não disponibilizou estabilização eletrônica.")
             } else {
                 prefs.edit().putBoolean(KEY_EIS, checked).apply()
-            }
-        }
-
-        experimental60Switch.setOnCheckedChangeListener { _, checked ->
-            experimental60Enabled = checked
-            onExperimental60Changed(checked)
-            if (checked) {
-                onInfo("Modo 60 experimental ativado. O app continuará mostrando o FPS real enviado.")
             }
         }
 
@@ -394,17 +385,95 @@ class CameraProController(
         onZoomChanged(zoom)
     }
 
-    private fun applyExperimental60Request() {
+    private fun applyNative60Request() {
         val camera = runningCamera() ?: return
         val success = runCatching {
             camera.setCustomRequest { request ->
                 request.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(60, 60))
             }
         }.getOrDefault(false)
-        onInfo(
-            if (success) "Solicitação experimental de 60 FPS aplicada; validando FPS real..."
-            else "O driver da câmera recusou a solicitação experimental de 60 FPS"
-        )
+        if (!isNative60Verified()) {
+            onInfo(
+                if (success) "60 FPS nativo solicitado; a live vai validar os quadros reais."
+                else "O driver recusou a faixa nativa de 60 FPS nesta lente."
+            )
+        }
+    }
+
+    fun markNative60Verified(): Boolean {
+        val key = native60Key() ?: return false
+        if (prefs.getBoolean(key, false)) return false
+        prefs.edit().putBoolean(key, true).apply()
+        return true
+    }
+
+    fun isNative60Verified(): Boolean {
+        val key = native60Key() ?: return false
+        return prefs.getBoolean(key, false)
+    }
+
+    private fun native60Status(): String {
+        return if (isNative60Verified()) {
+            "60 FPS nativo validado nesta câmera e resolução."
+        } else {
+            "60 FPS será solicitado diretamente e validado pelo contador real da live."
+        }
+    }
+
+    private fun native60Key(): String? {
+        val camera = cameraProvider() ?: return null
+        val id = runCatching { camera.getCurrentCameraId() }.getOrNull() ?: return null
+        val size = resolutionProvider()
+        return "${KEY_NATIVE_60_PREFIX}${id}_${size.width}x${size.height}"
+    }
+
+    private fun setupPresetButton(button: TextView, slot: Int) {
+        val savedKey = "${KEY_PRESET_PREFIX}${slot}_saved"
+        fun refresh() {
+            button.text = if (prefs.getBoolean(savedKey, false)) "PERFIL $slot ✓" else "PERFIL $slot"
+        }
+        button.setOnClickListener {
+            if (!prefs.getBoolean(savedKey, false)) {
+                onInfo("O Perfil $slot ainda está vazio. Pressione e segure para salvar.")
+                return@setOnClickListener
+            }
+            focusMode = runCatching {
+                FocusMode.valueOf(
+                    prefs.getString("${KEY_PRESET_PREFIX}${slot}_focus", FocusMode.AUTO.name)
+                        ?: FocusMode.AUTO.name
+                )
+            }.getOrDefault(FocusMode.AUTO)
+            savedZoom = prefs.getFloat("${KEY_PRESET_PREFIX}${slot}_zoom", 1f)
+            manualFocusProgress = prefs.getInt("${KEY_PRESET_PREFIX}${slot}_manual", 0)
+            exposureValue = prefs.getInt("${KEY_PRESET_PREFIX}${slot}_exposure", 0)
+            volumeZoomEnabled = prefs.getBoolean("${KEY_PRESET_PREFIX}${slot}_volume", true)
+            prefs.edit()
+                .putString(KEY_FOCUS_MODE, focusMode.name)
+                .putFloat(KEY_ZOOM, savedZoom)
+                .putInt(KEY_MANUAL_FOCUS, manualFocusProgress)
+                .putInt(KEY_EXPOSURE, exposureValue)
+                .putBoolean(KEY_OIS, prefs.getBoolean("${KEY_PRESET_PREFIX}${slot}_ois", false))
+                .putBoolean(KEY_EIS, prefs.getBoolean("${KEY_PRESET_PREFIX}${slot}_eis", false))
+                .apply()
+            applyAfterCameraStart()
+            onInfo("Perfil Pro $slot carregado")
+        }
+        button.setOnLongClickListener {
+            prefs.edit()
+                .putBoolean(savedKey, true)
+                .putString("${KEY_PRESET_PREFIX}${slot}_focus", focusMode.name)
+                .putFloat("${KEY_PRESET_PREFIX}${slot}_zoom", savedZoom)
+                .putInt("${KEY_PRESET_PREFIX}${slot}_manual", manualFocusProgress)
+                .putInt("${KEY_PRESET_PREFIX}${slot}_exposure", exposureValue)
+                .putBoolean("${KEY_PRESET_PREFIX}${slot}_volume", volumeZoomEnabled)
+                .putBoolean("${KEY_PRESET_PREFIX}${slot}_ois", prefs.getBoolean(KEY_OIS, false))
+                .putBoolean("${KEY_PRESET_PREFIX}${slot}_eis", prefs.getBoolean(KEY_EIS, false))
+                .apply()
+            refresh()
+            onInfo("Configuração atual salva no Perfil Pro $slot")
+            true
+        }
+        refresh()
     }
 
     private fun applyStabilizationFromPrefs() {
@@ -432,7 +501,8 @@ class CameraProController(
                 "Camera2: até $libraryFps FPS neste tamanho" +
                 (if (sizeFps > 0) " • duração indica ~$sizeFps FPS" else "") +
                 "\nFaixas AE: $ranges\nFoco manual: " +
-                (if (focusMax > 0f) "sim (${String.format(Locale.US, "%.2f", focusMax)} D)" else "não exposto")
+                (if (focusMax > 0f) "sim (${String.format(Locale.US, "%.2f", focusMax)} D)" else "não exposto") +
+                "\n60 FPS nativo: " + (if (isNative60Verified()) "validado" else "aguardando teste em live")
         }.getOrElse { "Não foi possível ler o diagnóstico: ${it.message}" }
     }
 
@@ -520,7 +590,8 @@ class CameraProController(
         private const val KEY_ZOOM = "zoom"
         private const val KEY_OIS = "ois"
         private const val KEY_EIS = "eis"
-        private const val KEY_EXPERIMENTAL_60 = "experimental_60"
         private const val KEY_VOLUME_ZOOM = "volume_zoom"
+        private const val KEY_NATIVE_60_PREFIX = "native_60_"
+        private const val KEY_PRESET_PREFIX = "preset_"
     }
 }

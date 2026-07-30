@@ -1,6 +1,7 @@
 package com.hoststorm.livestorm
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.media.MediaCodecInfo
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -31,10 +33,12 @@ import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
 import com.pedro.encoder.input.sources.audio.MicrophoneSource
 import com.pedro.encoder.input.sources.video.Camera2Source
+import com.pedro.library.base.recording.RecordController
 import com.pedro.library.generic.GenericStream
+import java.io.File
 import java.util.Locale
 
-class MainActivity : AppCompatActivity(), ConnectChecker {
+class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Callback {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraProController: CameraProController
@@ -59,6 +63,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private var liveStartedElapsed = 0L
     private var stable60Samples = 0
     private var low60Samples = 0
+    private var sourceMode = SourceMode.CAMERA
+    private var screenAudioMode = ScreenAudioMode.MIX
+    private var cameraRecordFile: File? = null
 
     private val timerHandler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -93,6 +100,21 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
     }
 
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            startScreenService(result.resultCode, data)
+        } else {
+            connecting = false
+            restoreAutomaticOrientationAfterLive()
+            setStatus(Status.IDLE, "TELA PRONTA")
+            updateStartButton()
+            showToast("A permissão para capturar a tela foi cancelada.")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -110,12 +132,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             onInfo = { message ->
                 binding.capabilityHint.text = message
                 showToast(message)
-            },
-            onExperimental60Changed = {
-                updateProfileUi()
-                if (profile.fps == 60 && !stream.isStreaming && !connecting) {
-                    prepareStream(showResult = true)
-                }
             }
         )
         overlayController = OverlayController(
@@ -138,16 +154,20 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         cameraProController.attachPreviewControls()
         updateZoomLabel(1f)
         updateOverlayButton(overlayController.enabled)
+        ScreenStreamService.callback = this
 
         restoreProfile()
+        restoreSourceMode()
         applyRequestedOrientationForMode(lockForLive = false)
         setupPreview()
         setupActions()
         updateProfileUi()
         updateConnectionLabel()
+        updateSourceUi()
 
         if (hasPermissions()) {
-            prepareStream(showResult = false)
+            if (sourceMode == SourceMode.CAMERA) prepareStream(showResult = false)
+            else showScreenReady()
         } else {
             permissionLauncher.launch(
                 arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
@@ -181,7 +201,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun setupActions() {
         binding.settingsButton.setOnClickListener { showSettingsDialog() }
         binding.startStopButton.setOnClickListener {
-            if (stream.isStreaming || connecting) stopLive() else startLive()
+            if (isLiveSessionActive()) stopLive() else startLive()
         }
 
         binding.resolution720Button.setOnClickListener { selectResolution(1280, 720) }
@@ -203,10 +223,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         binding.micButton.setOnClickListener { toggleMicrophone() }
         binding.proButton.setOnClickListener { cameraProController.showProDialog() }
         binding.overlayButton.setOnClickListener { overlayController.showDialog() }
+        binding.sourceButton.setOnClickListener { showSourceDialog() }
+        binding.recordButton.setOnClickListener { toggleLocalRecording() }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (::cameraProController.isInitialized && cameraProController.handleVolumeKey(event)) {
+        if (
+            sourceMode == SourceMode.CAMERA &&
+            ::cameraProController.isInitialized &&
+            cameraProController.handleVolumeKey(event)
+        ) {
             return true
         }
         return super.dispatchKeyEvent(event)
@@ -224,17 +250,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         if (!canChangeProfile()) return
         if (profile.fps == fps) return
 
-        if (fps == 60 && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled) {
-            showToast(
-                "Esta câmera não entrega 60 FPS reais em ${profile.resolutionLabel}. " +
-                    "Experimente 720p ou a câmera traseira."
-            )
-            binding.capabilityHint.text = "60 FPS indisponível nesta câmera e resolução"
-            return
-        }
-
         profile = profile.copy(fps = fps)
         saveProfile()
+        if (fps == 60) {
+            binding.capabilityHint.text = if (
+                sourceMode == SourceMode.CAMERA && cameraProController.isNative60Verified()
+            ) "60 FPS nativo já validado nesta câmera" else "60 FPS será validado pelos quadros reais"
+        }
         prepareStream(showResult = true)
     }
 
@@ -262,15 +284,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun canChangeProfile(): Boolean {
-        if (stream.isStreaming || connecting) {
-            showToast("Encerre a live antes de alterar qualidade, FPS ou formato.")
+        if (isLiveSessionActive() || isAnyRecording()) {
+            showToast("Encerre a live ou a gravação antes de alterar qualidade, FPS ou formato.")
             return false
         }
         return true
     }
 
     private fun prepareStream(showResult: Boolean) {
-        if (!hasPermissions()) return
+        if (!hasPermissions() || sourceMode != SourceMode.CAMERA) {
+            updateProfileUi()
+            return
+        }
 
         syncAutomaticOrientation()
         binding.preparingProgress.visibility = View.VISIBLE
@@ -282,20 +307,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
         try {
             stopAndReleaseCurrentSession()
-
-            val cameraMaxFps = maxSupportedFps()
-            if (profile.fps == 60 && cameraMaxFps < 60 && !cameraProController.experimental60Enabled) {
-                setStatus(Status.ERROR, "60 FPS INDISPONÍVEL")
-                binding.capabilityHint.text =
-                    "A câmera atual chega a $cameraMaxFps FPS em ${profile.resolutionLabel}"
-                if (showResult) {
-                    showToast(
-                        "O app não vai fingir 60 FPS nem reduzir para 30 automaticamente. " +
-                            "Escolha 720p ou troque de câmera."
-                    )
-                }
-                return
-            }
 
             stream.setVideoCodec(VideoCodec.H264)
             stream.setAudioCodec(AudioCodec.AAC)
@@ -343,6 +354,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun stopAndReleaseCurrentSession() {
+        if (stream.isRecording) stopCameraRecording(publish = true)
         if (::overlayController.isInitialized) overlayController.clear()
         if (::cameraProController.isInitialized) cameraProController.release()
         try {
@@ -395,7 +407,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun startPreviewWhenReady() {
-        if (!streamPrepared || stream.isOnPreview || !binding.cameraPreview.holder.surface.isValid) {
+        if (
+            sourceMode != SourceMode.CAMERA || !streamPrepared || stream.isOnPreview ||
+            !binding.cameraPreview.holder.surface.isValid
+        ) {
             return
         }
         try {
@@ -408,18 +423,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun startLive() {
+        if (sourceMode == SourceMode.SCREEN) {
+            startScreenLive()
+            return
+        }
         val settings = loadStreamSettings()
         val validation = settings.validationError()
         if (validation != null) {
             showToast(validation)
             showSettingsDialog()
-            return
-        }
-
-        if (profile.fps == 60 && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled) {
-            streamPrepared = false
-            setStatus(Status.ERROR, "60 FPS INDISPONÍVEL")
-            showToast("A câmera atual não suporta 60 FPS reais neste perfil.")
             return
         }
 
@@ -456,6 +468,19 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun stopLive() {
+        if (sourceMode == SourceMode.SCREEN || ScreenStreamService.isStreaming()) {
+            ScreenStreamService.stop(this)
+            connecting = false
+            connected = false
+            stopTimer()
+            binding.uploadBitrate.text = "Upload -- Mb/s"
+            binding.encoderFps.text = "FPS real --"
+            setStatus(Status.IDLE, "TELA PRONTA")
+            setProfileControlsEnabled(true)
+            updateStartButton()
+            restoreAutomaticOrientationAfterLive()
+            return
+        }
         try {
             if (stream.isStreaming) stream.stopStream()
         } catch (_: Exception) {
@@ -475,6 +500,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun switchCamera() {
+        if (sourceMode != SourceMode.CAMERA) {
+            showToast("Troca de lente disponível apenas na fonte Câmera.")
+            return
+        }
         val camera = stream.videoSource as? Camera2Source ?: return
         try {
             val liveNow = stream.isStreaming || connecting
@@ -484,25 +513,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             binding.cameraPreview.postDelayed({ cameraProController.applyAfterCameraStart() }, 500L)
             binding.flashButton.setBackgroundResource(R.drawable.bg_icon_button)
             val supported = maxSupportedFps()
-
-            if (profile.fps == 60 && supported < 60) {
-                if (liveNow) {
-                    camera.switchCamera()
-                    showToast("A outra câmera não suporta 60 FPS nesta live.")
-                } else {
-                    streamPrepared = false
-                    setStatus(Status.ERROR, "60 FPS INDISPONÍVEL")
-                    binding.capabilityHint.text =
-                        "Câmera selecionada: máximo de $supported FPS em ${profile.resolutionLabel}"
-                    showToast(
-                        "A nova câmera não suporta 60 FPS. Mantive o perfil em 60 para evitar uma live falsa em 30 FPS."
-                    )
-                }
-            } else if (!liveNow) {
+            if (!liveNow) {
                 prepareStream(showResult = false)
             } else {
-                binding.capabilityHint.text =
+                binding.capabilityHint.text = if (profile.fps == 60) {
+                    "Nova lente selecionada; validando 60 FPS reais..."
+                } else {
                     "Câmera selecionada: até $supported FPS em ${profile.resolutionLabel}"
+                }
             }
         } catch (error: Exception) {
             showToast("Não foi possível trocar a câmera: ${error.message}")
@@ -529,6 +547,21 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private fun toggleMicrophone() {
+        if (sourceMode == SourceMode.SCREEN) {
+            val muted = ScreenStreamService.instance?.toggleMicrophone()
+            when (muted) {
+                true -> {
+                    binding.micButton.text = "MUDO"
+                    binding.micButton.setBackgroundResource(R.drawable.bg_icon_button_active)
+                }
+                false -> {
+                    binding.micButton.text = "MIC"
+                    binding.micButton.setBackgroundResource(R.drawable.bg_icon_button)
+                }
+                null -> showToast("O modo de áudio interno atual não possui microfone para silenciar.")
+            }
+            return
+        }
         val microphone = stream.audioSource as? MicrophoneSource ?: return
         if (microphone.isMuted()) {
             microphone.unMute()
@@ -574,8 +607,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
             when {
                 stable60Samples >= 3 -> {
+                    if (
+                        sourceMode == SourceMode.CAMERA && stable60Samples == 3 &&
+                        cameraProController.markNative60Verified()
+                    ) {
+                        showToast("60 FPS nativo confirmado e salvo para esta câmera.")
+                    }
                     binding.capabilityHint.text =
-                        "60 FPS reais validados • YouTube recebendo ${profile.resolutionLabel}60"
+                        "60 FPS nativos validados • YouTube recebendo ${profile.resolutionLabel}60"
                     binding.capabilityHint.setTextColor(
                         ContextCompat.getColor(this, R.color.storm_green)
                     )
@@ -597,6 +636,175 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 }
             }
         }
+    }
+
+    private fun isLiveSessionActive(): Boolean {
+        return stream.isStreaming || ScreenStreamService.isStreaming() || connecting
+    }
+
+    private fun isAnyRecording(): Boolean {
+        return stream.isRecording || ScreenStreamService.isRecording()
+    }
+
+    private fun showSourceDialog() {
+        if (isLiveSessionActive() || isAnyRecording()) {
+            showToast("Encerre a live ou a gravação antes de trocar a fonte.")
+            return
+        }
+        val items = arrayOf(
+            "Câmera do celular",
+            "Tela/Jogo • áudio do app + microfone",
+            "Tela/Jogo • somente áudio do app",
+            "Tela/Jogo • somente microfone"
+        )
+        val selected = when {
+            sourceMode == SourceMode.CAMERA -> 0
+            screenAudioMode == ScreenAudioMode.MIX -> 1
+            screenAudioMode == ScreenAudioMode.INTERNAL -> 2
+            else -> 3
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Fonte da transmissão")
+            .setSingleChoiceItems(items, selected) { dialog, which ->
+                when (which) {
+                    0 -> setSourceMode(SourceMode.CAMERA, screenAudioMode)
+                    1 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.MIX)
+                    2 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.INTERNAL)
+                    3 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.MICROPHONE)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun setSourceMode(mode: SourceMode, audioMode: ScreenAudioMode) {
+        sourceMode = mode
+        screenAudioMode = audioMode
+        saveSourceMode()
+        if (mode == SourceMode.CAMERA) {
+            binding.screenModeOverlay.visibility = View.GONE
+            binding.micButton.text = "MIC"
+            prepareStream(showResult = false)
+        } else {
+            if (stream.isOnPreview) runCatching { stream.stopPreview() }
+            overlayController.clear()
+            showScreenReady()
+        }
+        updateSourceUi()
+        updateProfileUi()
+        updateStartButton()
+    }
+
+    private fun showScreenReady() {
+        binding.screenModeOverlay.visibility = View.VISIBLE
+        setStatus(Status.IDLE, "TELA PRONTA")
+        binding.capabilityHint.text = when (screenAudioMode) {
+            ScreenAudioMode.MIX -> "Tela/Jogo: áudio interno + microfone"
+            ScreenAudioMode.INTERNAL -> "Tela/Jogo: somente áudio interno"
+            ScreenAudioMode.MICROPHONE -> "Tela/Jogo: somente microfone"
+        }
+    }
+
+    private fun updateSourceUi() {
+        binding.sourceButton.text = if (sourceMode == SourceMode.CAMERA) "CÂMERA" else "TELA / JOGO"
+        binding.screenModeOverlay.visibility = if (sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
+        binding.proButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
+        binding.proButton.isEnabled = sourceMode == SourceMode.CAMERA
+        binding.flashButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
+        binding.flashButton.isEnabled = sourceMode == SourceMode.CAMERA
+    }
+
+    private fun startScreenLive() {
+        val settings = loadStreamSettings()
+        val validation = settings.validationError()
+        if (validation != null) {
+            showToast(validation)
+            showSettingsDialog()
+            return
+        }
+        if (profile.orientationMode == OrientationMode.AUTO) syncAutomaticOrientation()
+        applyRequestedOrientationForMode(lockForLive = true)
+        connecting = true
+        connected = false
+        setStatus(Status.CONNECTING, "AUTORIZAR TELA")
+        updateStartButton()
+        val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+    }
+
+    private fun startScreenService(resultCode: Int, data: Intent) {
+        val settings = loadStreamSettings()
+        ScreenStreamService.callback = this
+        val intent = ScreenStreamService.startIntent(
+            context = this,
+            resultCode = resultCode,
+            resultData = data,
+            endpoint = settings.endpoint(),
+            width = profile.width,
+            height = profile.height,
+            fps = profile.fps,
+            bitrate = profile.videoBitrate,
+            rotation = profile.rotation,
+            audioMode = screenAudioMode
+        )
+        ContextCompat.startForegroundService(this, intent)
+        setStatus(Status.CONNECTING, "TELA")
+    }
+
+    private fun toggleLocalRecording() {
+        if (sourceMode == SourceMode.SCREEN) {
+            val service = ScreenStreamService.instance
+            if (service == null || !service.isStreamingNow()) {
+                showToast("Inicie a live da tela antes de ativar a gravação local.")
+                return
+            }
+            service.toggleRecord()
+            return
+        }
+        if (!streamPrepared) {
+            prepareStream(showResult = true)
+            if (!streamPrepared) return
+        }
+        if (stream.isRecording) stopCameraRecording(publish = true) else startCameraRecording()
+    }
+
+    private fun startCameraRecording() {
+        val file = LocalRecordingUtils.createTempFile(this, "LiveStorm_Camera")
+        cameraRecordFile = file
+        try {
+            stream.startRecord(file.absolutePath) { status ->
+                runOnUiThread {
+                    if (status == RecordController.Status.RECORDING) {
+                        updateRecordButton(true)
+                        showToast("Gravação local iniciada")
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            cameraRecordFile = null
+            showToast("Não foi possível iniciar a gravação: ${error.message}")
+        }
+    }
+
+    private fun stopCameraRecording(publish: Boolean) {
+        if (!stream.isRecording) return
+        runCatching { stream.stopRecord() }
+        updateRecordButton(false)
+        val file = cameraRecordFile
+        cameraRecordFile = null
+        if (publish && file != null && file.exists()) {
+            LocalRecordingUtils.publish(this, file) { path ->
+                showToast("Gravação salva em $path")
+            }
+        }
+    }
+
+    private fun updateRecordButton(recording: Boolean) {
+        binding.recordButton.text = if (recording) "● GRAVANDO" else "● REC LOCAL"
+        binding.recordButton.setBackgroundResource(
+            if (recording) R.drawable.bg_live_button_stop else R.drawable.bg_chip
+        )
     }
 
     private fun showSettingsDialog() {
@@ -683,11 +891,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             profile.orientationMode == OrientationMode.LANDSCAPE
         )
 
-        val reported60 = maxSupportedFps() >= 60
-        binding.fps60Button.alpha =
-            if (reported60 || cameraProController.experimental60Enabled) 1f else 0.55f
+        binding.fps60Button.alpha = 1f
         binding.profileSummary.text =
-            "${profile.resolutionLabel} • ${profile.fps} FPS • ${profile.aspectLabel} • ${profile.bitrateLabel}"
+            "${if (sourceMode == SourceMode.CAMERA) "Câmera" else "Tela"} • " +
+                "${profile.resolutionLabel} • ${profile.fps} FPS • ${profile.aspectLabel} • ${profile.bitrateLabel}"
     }
 
     private fun setChip(view: TextView, selected: Boolean) {
@@ -708,13 +915,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             it.isEnabled = enabled
             it.alpha = if (enabled) 1f else 0.45f
         }
-        if (
-            enabled && maxSupportedFps() < 60 && !cameraProController.experimental60Enabled
-        ) binding.fps60Button.alpha = 0.55f
     }
 
     private fun updateStartButton() {
-        if (stream.isStreaming || connecting) {
+        if (isLiveSessionActive()) {
             binding.startStopButton.text = "■  ENCERRAR LIVE"
             binding.startStopButton.setBackgroundResource(R.drawable.bg_live_button_stop)
         } else {
@@ -812,7 +1016,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         super.onConfigurationChanged(newConfig)
         if (!::binding.isInitialized) return
         if (profile.orientationMode != OrientationMode.AUTO) return
-        if (stream.isStreaming || connecting) return
+        if (isLiveSessionActive()) return
 
         val verticalNow = currentDeviceIsPortrait(newConfig)
         if (profile.vertical == verticalNow) {
@@ -920,8 +1124,88 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // O YouTube normalmente confirma a conexão em onConnectionSuccess().
     }
 
+    override fun onScreenConnectionStarted() {
+        runOnUiThread {
+            connecting = true
+            setStatus(Status.CONNECTING, "TELA")
+        }
+    }
+
+    override fun onScreenConnectionSuccess() {
+        runOnUiThread {
+            connecting = false
+            connected = true
+            setStatus(Status.LIVE, "AO VIVO")
+            setProfileControlsEnabled(false)
+            updateStartButton()
+            startTimer()
+            binding.capabilityHint.text = if (profile.fps == 60) {
+                "Tela conectada; validando 60 FPS reais..."
+            } else {
+                "Tela conectada diretamente ao YouTube"
+            }
+            showToast("Transmissão da tela iniciada. Abra o jogo que deseja mostrar.")
+        }
+    }
+
+    override fun onScreenConnectionFailed(reason: String) {
+        runOnUiThread {
+            connecting = false
+            connected = false
+            stopTimer()
+            restoreAutomaticOrientationAfterLive()
+            setStatus(Status.ERROR, "FALHA NA TELA")
+            setProfileControlsEnabled(true)
+            updateStartButton()
+            showToast("Falha na transmissão da tela: $reason")
+        }
+    }
+
+    override fun onScreenBitrate(bitrate: Long) {
+        runOnUiThread {
+            binding.uploadBitrate.text = String.format(
+                Locale.getDefault(),
+                "Upload %.2f Mb/s",
+                bitrate / 1_000_000f
+            )
+        }
+    }
+
+    override fun onScreenFps(fps: Int) {
+        onEncodedFps(fps)
+    }
+
+    override fun onScreenDisconnected() {
+        runOnUiThread {
+            connecting = false
+            connected = false
+            stopTimer()
+            restoreAutomaticOrientationAfterLive()
+            setStatus(Status.IDLE, "TELA PRONTA")
+            setProfileControlsEnabled(true)
+            updateStartButton()
+            updateRecordButton(false)
+        }
+    }
+
+    override fun onScreenRecordingChanged(recording: Boolean, savedPath: String?) {
+        runOnUiThread {
+            updateRecordButton(recording)
+            if (savedPath != null) showToast("Gravação salva em $savedPath")
+        }
+    }
+
+    override fun onScreenMessage(message: String) {
+        runOnUiThread {
+            binding.capabilityHint.text = message
+            showToast(message)
+        }
+    }
+
     override fun onDestroy() {
         timerHandler.removeCallbacksAndMessages(null)
+        if (ScreenStreamService.callback === this) ScreenStreamService.callback = null
+        if (stream.isRecording) stopCameraRecording(publish = true)
         if (::overlayController.isInitialized) overlayController.release()
         if (::cameraProController.isInitialized) cameraProController.release()
         try {
@@ -945,6 +1229,26 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             .edit()
             .putString("server", settings.server)
             .putString("stream_key", settings.streamKey)
+            .apply()
+    }
+
+    private fun restoreSourceMode() {
+        val prefs = getSharedPreferences(PREF_SOURCE_MODE, Context.MODE_PRIVATE)
+        sourceMode = runCatching {
+            SourceMode.valueOf(prefs.getString("source", SourceMode.CAMERA.name) ?: SourceMode.CAMERA.name)
+        }.getOrDefault(SourceMode.CAMERA)
+        screenAudioMode = runCatching {
+            ScreenAudioMode.valueOf(
+                prefs.getString("screen_audio", ScreenAudioMode.MIX.name) ?: ScreenAudioMode.MIX.name
+            )
+        }.getOrDefault(ScreenAudioMode.MIX)
+    }
+
+    private fun saveSourceMode() {
+        getSharedPreferences(PREF_SOURCE_MODE, Context.MODE_PRIVATE)
+            .edit()
+            .putString("source", sourceMode.name)
+            .putString("screen_audio", screenAudioMode.name)
             .apply()
     }
 
@@ -1039,6 +1343,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     companion object {
         private const val PREF_STREAM_CONFIG = "youtube_stream_config"
         private const val PREF_PROFILE = "youtube_stream_profile"
+        private const val PREF_SOURCE_MODE = "stream_source_mode"
         private const val DEFAULT_YOUTUBE_RTMPS =
             "rtmps://a.rtmps.youtube.com:443/live2"
     }

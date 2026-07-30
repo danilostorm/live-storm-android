@@ -116,3 +116,13 @@ A API key não autoriza operações na conta. Para criar transmissões, streams 
 chave automaticamente, o aplicativo precisará de OAuth 2.0 com o escopo
 `youtube.force-ssl`, Client ID Android, pacote e SHA-1 da assinatura. Até essa
 configuração ser adicionada, a transmissão direta por RTMPS e chave continua ativa.
+
+
+## Live Storm 0.3.0
+
+- 60 FPS nativo: a faixa 60 é solicitada automaticamente e o sucesso fica memorizado por câmera/resolução após validação real.
+- Fonte Câmera ou Tela/Jogo.
+- Captura de áudio interno, microfone ou mistura dos dois em Android 10+ (o app/jogo pode bloquear áudio interno).
+- Serviço foreground para a captura de tela conforme as regras atuais do Android.
+- Gravação local MP4 com publicação em `Movies/LiveStorm`.
+- Três perfis Pro: toque carrega; toque longo salva zoom, foco, exposição e estabilização.
