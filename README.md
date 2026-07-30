@@ -137,7 +137,7 @@ configuração ser adicionada, a transmissão direta por RTMPS e chave continua 
 - Áudio de Games configurável entre jogo + microfone, somente jogo ou somente microfone.
 - Permissões solicitadas conforme o modo: câmera não é exigida para transmitir a tela.
 
-## Live Storm 0.5.0
+## Live Storm 0.5.1
 
 - Interface principal reorganizada e compacta.
 - Modo Games usa fundo próprio e nunca exibe a câmera atrás.
