@@ -72,7 +72,8 @@ internal class YoutubeLiveApi {
             token = accessToken,
             query = mapOf(
                 "part" to "id,snippet,status,contentDetails",
-                "broadcastStatus" to "all",
+                // A API aceita apenas um filtro principal por chamada.
+                // mine=true já limita a resposta às transmissões da conta autorizada.
                 "mine" to "true",
                 "maxResults" to "50"
             )
