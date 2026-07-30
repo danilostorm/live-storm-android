@@ -32,6 +32,21 @@ jobs:
           mkdir -p tools
           cat .github/v030/full* | base64 -d | gzip -d > tools/apply_v030.py
           echo '66a988dd1e905553daf1b197718cb106e9696990ac262c1e518676b9de1d7f9a  tools/apply_v030.py' | sha256sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tools/apply_v030.py')
+          content = path.read_text(encoding='utf-8')
+          content = content.replace(
+              r'"\nFaixas AE: $ranges\nFoco manual: " +',
+              r'"\\nFaixas AE: $ranges\\nFoco manual: " +'
+          )
+          content = content.replace(
+              r'"\n60 FPS nativo: " +',
+              r'"\\n60 FPS nativo: " +'
+          )
+          path.write_text(content, encoding='utf-8')
+          PY
+          echo 'b0fc3d838aa556f2100bc504ed853241ece579f3135e4a3d5ca87872b7cfb6d5  tools/apply_v030.py' | sha256sum -c -
           python tools/apply_v030.py
 
       - name: Set up JDK 17
