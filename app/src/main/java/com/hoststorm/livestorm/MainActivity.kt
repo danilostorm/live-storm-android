@@ -127,6 +127,32 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         }
     }
 
+    private val youtubeAuthLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val server = data?.getStringExtra(YoutubeAuthActivity.EXTRA_SERVER)
+            val streamKey = data?.getStringExtra(YoutubeAuthActivity.EXTRA_STREAM_KEY)
+            if (!server.isNullOrBlank() && !streamKey.isNullOrBlank()) {
+                saveStreamSettings(
+                    StreamSettings(
+                        server = server.trim().trimEnd('/'),
+                        streamKey = streamKey.trim()
+                    )
+                )
+                updateConnectionLabel()
+                val title = data.getStringExtra(YoutubeAuthActivity.EXTRA_BROADCAST_TITLE)
+                binding.capabilityHint.text = if (title.isNullOrBlank()) {
+                    "Conta YouTube conectada e chave RTMPS configurada"
+                } else {
+                    "Live selecionada: $title"
+                }
+                showToast("Conta YouTube conectada. A transmissão está pronta.")
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -1098,7 +1124,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         val current = loadStreamSettings()
         dialogBinding.streamKeyInput.setText(current.streamKey)
         dialogBinding.serverInput.setText(current.server)
-        dialogBinding.connectYoutubeButton.setOnClickListener { showYoutubeConnectionInfo() }
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle("Transmissão direta para o YouTube")
@@ -1109,6 +1134,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             .create()
 
         dialog.setOnShowListener {
+            dialogBinding.connectYoutubeButton.setOnClickListener {
+                dialog.dismiss()
+                openYoutubeAuth()
+            }
             dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 dialogBinding.serverInput.setText(DEFAULT_YOUTUBE_RTMPS)
             }
@@ -1129,6 +1158,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             }
         }
         dialog.show()
+    }
+
+    private fun openYoutubeAuth() {
+        val intent = Intent(this, YoutubeAuthActivity::class.java)
+            .putExtra(YoutubeAuthActivity.EXTRA_RESOLUTION, profile.resolutionLabel)
+            .putExtra(
+                YoutubeAuthActivity.EXTRA_FRAME_RATE,
+                if (profile.fps >= 60) "60fps" else "30fps"
+            )
+        youtubeAuthLauncher.launch(intent)
     }
 
     private fun showYoutubeConnectionInfo() {
