@@ -31,6 +31,7 @@ import com.google.android.material.snackbar.Snackbar
 import com.hoststorm.livestorm.databinding.ActivityMainBinding
 import com.hoststorm.livestorm.databinding.DialogStreamSettingsBinding
 import com.hoststorm.livestorm.databinding.SheetMoreOptionsBinding
+import com.hoststorm.livestorm.databinding.SheetStreamQualityBinding
 import com.pedro.common.AudioCodec
 import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
@@ -70,7 +71,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     private var screenAudioMode = ScreenAudioMode.MIX
     private var cameraRecordFile: File? = null
     private var hudVisible = true
-    private var qualityExpanded = false
 
     private val timerHandler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -245,10 +245,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.recordButton.setOnClickListener { toggleLocalRecording() }
         binding.moreOptionsButton.setOnClickListener { showMoreOptionsSheet() }
         binding.panelMoreOptionsButton.setOnClickListener { showMoreOptionsSheet() }
-        binding.qualityToggleButton.setOnClickListener {
-            qualityExpanded = !qualityExpanded
-            updateQualityPanel()
-        }
+        binding.qualityToggleButton.setOnClickListener { showQualitySheet() }
         binding.hudToggleButton.setOnClickListener { toggleHud() }
     }
 
@@ -718,7 +715,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         }
         sourceMode = mode
         screenAudioMode = audioMode
-        qualityExpanded = false
         saveSourceMode()
         if (!hasPermissionsForCurrentMode()) {
             updateSourceUi()
@@ -908,8 +904,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.topScrim.visibility = visibility
         binding.bottomScrim.visibility = visibility
         binding.cameraTools.visibility = visibility
-        binding.qualityOptionsContainer.visibility =
-            if (hudVisible && qualityExpanded) View.VISIBLE else View.GONE
+        binding.qualityOptionsContainer.visibility = View.GONE
 
         if (!hudVisible) {
             binding.screenModeOverlay.visibility = View.GONE
@@ -930,16 +925,127 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     }
 
     private fun updateQualityPanel() {
-        val action = if (qualityExpanded) "FECHAR" else "AJUSTAR"
         val orientation = when (profile.orientationMode) {
             OrientationMode.AUTO -> "AUTO"
             OrientationMode.PORTRAIT -> "RETRATO 9:16"
             OrientationMode.LANDSCAPE -> "PAISAGEM 16:9"
         }
         binding.qualityToggleButton.text =
-            "${profile.resolutionLabel} • ${profile.fps} FPS • $orientation    $action"
-        binding.qualityOptionsContainer.visibility =
-            if (hudVisible && qualityExpanded) View.VISIBLE else View.GONE
+            "QUALIDADE  •  ${profile.resolutionLabel}  •  ${profile.fps} FPS  •  $orientation   ›"
+        binding.qualityOptionsContainer.visibility = View.GONE
+    }
+
+    private fun showQualitySheet() {
+        if (!canChangeProfile()) return
+
+        val sheetBinding = SheetStreamQualityBinding.inflate(layoutInflater)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(sheetBinding.root)
+
+        var selectedWidth = profile.width
+        var selectedHeight = profile.height
+        var selectedFps = profile.fps
+        var selectedOrientation = profile.orientationMode
+
+        fun orientationLabel(): String = when (selectedOrientation) {
+            OrientationMode.AUTO -> "Automático"
+            OrientationMode.PORTRAIT -> "Retrato 9:16"
+            OrientationMode.LANDSCAPE -> "Paisagem 16:9"
+        }
+
+        fun refreshSelections() {
+            setChip(sheetBinding.quality720Button, selectedWidth == 1280)
+            setChip(sheetBinding.quality1080Button, selectedWidth == 1920)
+            setChip(sheetBinding.quality30Button, selectedFps == 30)
+            setChip(sheetBinding.quality60Button, selectedFps == 60)
+            setChip(sheetBinding.qualityAutoButton, selectedOrientation == OrientationMode.AUTO)
+            setChip(
+                sheetBinding.qualityPortraitButton,
+                selectedOrientation == OrientationMode.PORTRAIT
+            )
+            setChip(
+                sheetBinding.qualityLandscapeButton,
+                selectedOrientation == OrientationMode.LANDSCAPE
+            )
+            val resolution = if (selectedWidth >= 1920) "1080p" else "720p"
+            sheetBinding.qualitySummary.text =
+                "$resolution • $selectedFps FPS • ${orientationLabel()}"
+        }
+
+        sheetBinding.quality720Button.setOnClickListener {
+            selectedWidth = 1280
+            selectedHeight = 720
+            refreshSelections()
+        }
+        sheetBinding.quality1080Button.setOnClickListener {
+            selectedWidth = 1920
+            selectedHeight = 1080
+            refreshSelections()
+        }
+        sheetBinding.quality30Button.setOnClickListener {
+            selectedFps = 30
+            refreshSelections()
+        }
+        sheetBinding.quality60Button.setOnClickListener {
+            selectedFps = 60
+            refreshSelections()
+        }
+        sheetBinding.qualityAutoButton.setOnClickListener {
+            selectedOrientation = OrientationMode.AUTO
+            refreshSelections()
+        }
+        sheetBinding.qualityPortraitButton.setOnClickListener {
+            selectedOrientation = OrientationMode.PORTRAIT
+            refreshSelections()
+        }
+        sheetBinding.qualityLandscapeButton.setOnClickListener {
+            selectedOrientation = OrientationMode.LANDSCAPE
+            refreshSelections()
+        }
+        sheetBinding.cancelQualityButton.setOnClickListener { dialog.dismiss() }
+        sheetBinding.saveQualityButton.setOnClickListener {
+            val resolvedVertical = when (selectedOrientation) {
+                OrientationMode.AUTO -> currentDeviceIsPortrait()
+                OrientationMode.PORTRAIT -> true
+                OrientationMode.LANDSCAPE -> false
+            }
+            val changed = profile.width != selectedWidth ||
+                profile.height != selectedHeight ||
+                profile.fps != selectedFps ||
+                profile.orientationMode != selectedOrientation ||
+                profile.vertical != resolvedVertical
+
+            if (!changed) {
+                dialog.dismiss()
+                return@setOnClickListener
+            }
+
+            profile = profile.copy(
+                width = selectedWidth,
+                height = selectedHeight,
+                fps = selectedFps,
+                orientationMode = selectedOrientation,
+                vertical = resolvedVertical
+            )
+            saveProfile()
+            applyRequestedOrientationForMode(lockForLive = false)
+            updateProfileUi()
+            updateQualityPanel()
+            dialog.dismiss()
+
+            binding.root.postDelayed({
+                syncAutomaticOrientation()
+                if (sourceMode == SourceMode.CAMERA) {
+                    prepareStream(showResult = true)
+                } else {
+                    showScreenReady()
+                    updateProfileUi()
+                }
+            }, if (selectedOrientation == OrientationMode.AUTO) 250L else 0L)
+        }
+
+        refreshSelections()
+        dialog.show()
     }
 
     private fun showMoreOptionsSheet() {
