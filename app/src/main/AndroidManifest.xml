@@ -32,6 +32,11 @@
             android:foregroundServiceType="mediaProjection|microphone" />
 
         <activity
+            android:name=".YoutubeAuthActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor" />
+
+        <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"

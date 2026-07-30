@@ -10,8 +10,8 @@ android {
         applicationId = "com.hoststorm.livestorm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 7
+        versionName = "0.6.0"
     }
 
     buildTypes {
@@ -45,5 +45,6 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("com.google.android.material:material:1.13.0")
+    implementation("com.google.android.gms:play-services-auth:21.6.0")
     implementation("com.github.pedroSG94.RootEncoder:library:2.7.2")
 }
