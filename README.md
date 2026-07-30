@@ -126,3 +126,13 @@ configuração ser adicionada, a transmissão direta por RTMPS e chave continua 
 - Serviço foreground para a captura de tela conforme as regras atuais do Android.
 - Gravação local MP4 com publicação em `Movies/LiveStorm`.
 - Três perfis Pro: toque carrega; toque longo salva zoom, foco, exposição e estabilização.
+
+
+## Live Storm 0.4.0 — HUD e modos profissionais
+
+- HUD ocultável por botão flutuante, preservando somente o controle HUD+/HUD−.
+- Orientação automática aplicada como padrão na primeira execução após a atualização.
+- Seletor direto entre **Normal • Câmera** e **Games • Tela**.
+- O modo Games nunca abre aplicativos: solicita a captura da tela e o usuário abre o jogo normalmente.
+- Áudio de Games configurável entre jogo + microfone, somente jogo ou somente microfone.
+- Permissões solicitadas conforme o modo: câmera não é exigida para transmitir a tela.

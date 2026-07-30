@@ -1,0 +1,70 @@
+name: Apply Live Storm v0.4.0
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/apply_v040.py'
+      - '.github/workflows/apply-v040.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply professional HUD and modes
+        run: |
+          sed -i 's/re.subn(pattern, replacement, text/re.subn(pattern, lambda _: replacement, text/' tools/apply_v040.py
+          python tools/apply_v040.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Build Live Storm 0.4.0 APK
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Upload Live Storm 0.4.0 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-storm-v040-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Commit generated source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/hoststorm/livestorm/MainActivity.kt \
+                  app/src/main/res/layout/activity_main.xml \
+                  app/build.gradle.kts README.md
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit'
+            exit 0
+          fi
+          git commit -m 'Integra HUD ocultável e modos Normal/Games'
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
