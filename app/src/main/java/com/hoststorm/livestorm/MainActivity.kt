@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     private var sourceMode = SourceMode.CAMERA
     private var screenAudioMode = ScreenAudioMode.MIX
     private var cameraRecordFile: File? = null
+    private var hudVisible = true
 
     private val timerHandler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -89,13 +90,20 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        val granted = result[Manifest.permission.CAMERA] == true &&
-            result[Manifest.permission.RECORD_AUDIO] == true
-        if (granted) {
-            prepareStream(showResult = true)
+    ) {
+        if (hasPermissionsForCurrentMode()) {
+            if (sourceMode == SourceMode.CAMERA) {
+                prepareStream(showResult = true)
+            } else {
+                showScreenReady()
+            }
         } else {
-            showToast("A câmera e o microfone são obrigatórios para transmitir.")
+            val required = if (sourceMode == SourceMode.CAMERA) {
+                "câmera e microfone"
+            } else {
+                "microfone"
+            }
+            showToast("Autorize $required para usar este modo de transmissão.")
             setStatus(Status.ERROR, "PERMISSÕES")
         }
     }
@@ -164,14 +172,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         updateProfileUi()
         updateConnectionLabel()
         updateSourceUi()
+        restoreHudPreference()
 
-        if (hasPermissions()) {
+        if (hasPermissionsForCurrentMode()) {
             if (sourceMode == SourceMode.CAMERA) prepareStream(showResult = false)
             else showScreenReady()
         } else {
-            permissionLauncher.launch(
-                arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-            )
+            requestPermissionsForCurrentMode()
         }
     }
 
@@ -223,8 +230,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.micButton.setOnClickListener { toggleMicrophone() }
         binding.proButton.setOnClickListener { cameraProController.showProDialog() }
         binding.overlayButton.setOnClickListener { overlayController.showDialog() }
-        binding.sourceButton.setOnClickListener { showSourceDialog() }
+        binding.normalModeButton.setOnClickListener {
+            setSourceMode(SourceMode.CAMERA, screenAudioMode)
+        }
+        binding.gamesModeButton.setOnClickListener {
+            setSourceMode(SourceMode.SCREEN, screenAudioMode)
+        }
+        binding.gameAudioButton.setOnClickListener { showGameAudioDialog() }
         binding.recordButton.setOnClickListener { toggleLocalRecording() }
+        binding.hudToggleButton.setOnClickListener { toggleHud() }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -292,7 +306,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     }
 
     private fun prepareStream(showResult: Boolean) {
-        if (!hasPermissions() || sourceMode != SourceMode.CAMERA) {
+        if (!hasCameraPermission() || !hasAudioPermission() || sourceMode != SourceMode.CAMERA) {
             updateProfileUi()
             return
         }
@@ -646,42 +660,59 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         return stream.isRecording || ScreenStreamService.isRecording()
     }
 
-    private fun showSourceDialog() {
+    private fun showGameAudioDialog() {
+        if (sourceMode != SourceMode.SCREEN) {
+            showToast("Selecione o modo Games para configurar o áudio da tela.")
+            return
+        }
         if (isLiveSessionActive() || isAnyRecording()) {
-            showToast("Encerre a live ou a gravação antes de trocar a fonte.")
+            showToast("Encerre a live ou a gravação antes de alterar o áudio do modo Games.")
             return
         }
         val items = arrayOf(
-            "Câmera do celular",
-            "Tela/Jogo • áudio do app + microfone",
-            "Tela/Jogo • somente áudio do app",
-            "Tela/Jogo • somente microfone"
+            "Áudio do jogo + microfone",
+            "Somente áudio do jogo",
+            "Somente microfone"
         )
-        val selected = when {
-            sourceMode == SourceMode.CAMERA -> 0
-            screenAudioMode == ScreenAudioMode.MIX -> 1
-            screenAudioMode == ScreenAudioMode.INTERNAL -> 2
-            else -> 3
+        val selected = when (screenAudioMode) {
+            ScreenAudioMode.MIX -> 0
+            ScreenAudioMode.INTERNAL -> 1
+            ScreenAudioMode.MICROPHONE -> 2
         }
         MaterialAlertDialogBuilder(this)
-            .setTitle("Fonte da transmissão")
+            .setTitle("Áudio da live de Games")
             .setSingleChoiceItems(items, selected) { dialog, which ->
-                when (which) {
-                    0 -> setSourceMode(SourceMode.CAMERA, screenAudioMode)
-                    1 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.MIX)
-                    2 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.INTERNAL)
-                    3 -> setSourceMode(SourceMode.SCREEN, ScreenAudioMode.MICROPHONE)
+                screenAudioMode = when (which) {
+                    1 -> ScreenAudioMode.INTERNAL
+                    2 -> ScreenAudioMode.MICROPHONE
+                    else -> ScreenAudioMode.MIX
                 }
+                saveSourceMode()
+                updateSourceUi()
+                showScreenReady()
                 dialog.dismiss()
             }
+            .setMessage(
+                "O Live Storm captura a tela do Android. Ele não abre nenhum jogo; " +
+                    "depois de iniciar a transmissão, abra o jogo normalmente."
+            )
             .setNegativeButton("Cancelar", null)
             .show()
     }
 
     private fun setSourceMode(mode: SourceMode, audioMode: ScreenAudioMode) {
+        if (isLiveSessionActive() || isAnyRecording()) {
+            showToast("Encerre a live ou a gravação antes de trocar o tipo de live.")
+            return
+        }
         sourceMode = mode
         screenAudioMode = audioMode
         saveSourceMode()
+        if (!hasPermissionsForCurrentMode()) {
+            updateSourceUi()
+            requestPermissionsForCurrentMode()
+            return
+        }
         if (mode == SourceMode.CAMERA) {
             binding.screenModeOverlay.visibility = View.GONE
             binding.micButton.text = "MIC"
@@ -697,18 +728,36 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     }
 
     private fun showScreenReady() {
-        binding.screenModeOverlay.visibility = View.VISIBLE
-        setStatus(Status.IDLE, "TELA PRONTA")
+        binding.screenModeOverlay.text =
+            "MODO GAMES • CAPTURA DA TELA\n" +
+                "O Live Storm não abre jogos. Autorize a captura e depois abra o jogo."
+        binding.screenModeOverlay.visibility =
+            if (hudVisible && sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
+        setStatus(Status.IDLE, "GAMES PRONTO")
         binding.capabilityHint.text = when (screenAudioMode) {
-            ScreenAudioMode.MIX -> "Tela/Jogo: áudio interno + microfone"
-            ScreenAudioMode.INTERNAL -> "Tela/Jogo: somente áudio interno"
-            ScreenAudioMode.MICROPHONE -> "Tela/Jogo: somente microfone"
+            ScreenAudioMode.MIX -> "Games: áudio do jogo + microfone"
+            ScreenAudioMode.INTERNAL -> "Games: somente áudio interno do jogo"
+            ScreenAudioMode.MICROPHONE -> "Games: somente microfone"
         }
     }
 
     private fun updateSourceUi() {
-        binding.sourceButton.text = if (sourceMode == SourceMode.CAMERA) "CÂMERA" else "TELA / JOGO"
-        binding.screenModeOverlay.visibility = if (sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
+        setChip(binding.normalModeButton, sourceMode == SourceMode.CAMERA)
+        setChip(binding.gamesModeButton, sourceMode == SourceMode.SCREEN)
+        binding.broadcastModeHint.text = if (sourceMode == SourceMode.CAMERA) {
+            "Live normal com câmera, zoom, foco Pro, flash, microfone e overlay."
+        } else {
+            "Captura a tela do Android. O app não abre o jogo; você o abre após autorizar."
+        }
+        binding.gameAudioButton.visibility =
+            if (sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
+        binding.gameAudioButton.text = when (screenAudioMode) {
+            ScreenAudioMode.MIX -> "ÁUDIO: JOGO + MICROFONE"
+            ScreenAudioMode.INTERNAL -> "ÁUDIO: SOMENTE JOGO"
+            ScreenAudioMode.MICROPHONE -> "ÁUDIO: SOMENTE MICROFONE"
+        }
+        binding.screenModeOverlay.visibility =
+            if (hudVisible && sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
         binding.proButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
         binding.proButton.isEnabled = sourceMode == SourceMode.CAMERA
         binding.flashButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
@@ -749,7 +798,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             audioMode = screenAudioMode
         )
         ContextCompat.startForegroundService(this, intent)
-        setStatus(Status.CONNECTING, "TELA")
+        setHudVisible(false, announce = false)
+        setStatus(Status.CONNECTING, "GAMES")
     }
 
     private fun toggleLocalRecording() {
@@ -805,6 +855,48 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.recordButton.setBackgroundResource(
             if (recording) R.drawable.bg_live_button_stop else R.drawable.bg_chip
         )
+    }
+
+    private fun restoreHudPreference() {
+        hudVisible = getSharedPreferences(PREF_HUD, Context.MODE_PRIVATE)
+            .getBoolean("visible", true)
+        applyHudVisibility(announce = false)
+    }
+
+    private fun toggleHud() {
+        setHudVisible(!hudVisible, announce = true)
+    }
+
+    private fun setHudVisible(visible: Boolean, announce: Boolean) {
+        hudVisible = visible
+        getSharedPreferences(PREF_HUD, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("visible", visible)
+            .apply()
+        applyHudVisibility(announce)
+    }
+
+    private fun applyHudVisibility(announce: Boolean) {
+        val visibility = if (hudVisible) View.VISIBLE else View.GONE
+        binding.topBar.visibility = visibility
+        binding.statsCard.visibility = visibility
+        binding.cameraTools.visibility = visibility
+        binding.controlPanel.visibility = visibility
+        binding.topScrim.visibility = visibility
+        binding.bottomScrim.visibility = visibility
+        if (!hudVisible) {
+            binding.screenModeOverlay.visibility = View.GONE
+            binding.focusIndicator.visibility = View.GONE
+        } else {
+            updateSourceUi()
+        }
+        binding.hudToggleButton.text = if (hudVisible) "HUD−" else "HUD+"
+        binding.hudToggleButton.alpha = if (hudVisible) 0.72f else 1f
+        binding.hudToggleButton.contentDescription =
+            if (hudVisible) "Ocultar informações da tela" else "Mostrar informações da tela"
+        if (announce) {
+            showToast(if (hudVisible) "HUD exibido" else "HUD ocultado; toque em HUD+ para restaurar")
+        }
     }
 
     private fun showSettingsDialog() {
@@ -890,11 +982,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             binding.landscapeOrientationButton,
             profile.orientationMode == OrientationMode.LANDSCAPE
         )
-
         binding.fps60Button.alpha = 1f
+        val modeLabel = if (sourceMode == SourceMode.CAMERA) "NORMAL" else "GAMES"
         binding.profileSummary.text =
-            "${if (sourceMode == SourceMode.CAMERA) "Câmera" else "Tela"} • " +
-                "${profile.resolutionLabel} • ${profile.fps} FPS • ${profile.aspectLabel} • ${profile.bitrateLabel}"
+            "$modeLabel • ${profile.resolutionLabel} • ${profile.fps} FPS • " +
+                "${profile.aspectLabel} • ${profile.bitrateLabel}"
     }
 
     private fun setChip(view: TextView, selected: Boolean) {
@@ -910,7 +1002,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             binding.fps60Button,
             binding.autoOrientationButton,
             binding.portraitOrientationButton,
-            binding.landscapeOrientationButton
+            binding.landscapeOrientationButton,
+            binding.normalModeButton,
+            binding.gamesModeButton,
+            binding.gameAudioButton
         ).forEach {
             it.isEnabled = enabled
             it.alpha = if (enabled) 1f else 0.45f
@@ -922,7 +1017,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             binding.startStopButton.text = "■  ENCERRAR LIVE"
             binding.startStopButton.setBackgroundResource(R.drawable.bg_live_button_stop)
         } else {
-            binding.startStopButton.text = "●  INICIAR NO YOUTUBE"
+            binding.startStopButton.text = if (sourceMode == SourceMode.CAMERA) {
+                "●  INICIAR LIVE NORMAL"
+            } else {
+                "●  INICIAR LIVE DE GAMES"
+            }
             binding.startStopButton.setBackgroundResource(R.drawable.bg_live_button)
         }
     }
@@ -1030,15 +1129,32 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.root.post { prepareStream(showResult = false) }
     }
 
-    private fun hasPermissions(): Boolean {
+    private fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasPermissionsForCurrentMode(): Boolean {
+        return hasAudioPermission() &&
+            (sourceMode == SourceMode.SCREEN || hasCameraPermission())
+    }
+
+    private fun requestPermissionsForCurrentMode() {
+        val permissions = if (sourceMode == SourceMode.CAMERA) {
+            arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        } else {
+            arrayOf(Manifest.permission.RECORD_AUDIO)
+        }
+        permissionLauncher.launch(permissions)
     }
 
     private fun showToast(message: String) {
@@ -1144,7 +1260,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
             } else {
                 "Tela conectada diretamente ao YouTube"
             }
-            showToast("Transmissão da tela iniciada. Abra o jogo que deseja mostrar.")
+            showToast("Live de Games iniciada. O Live Storm não abre o jogo; agora abra-o normalmente.")
         }
     }
 
@@ -1254,13 +1370,22 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
 
     private fun restoreProfile() {
         val prefs = getSharedPreferences(PREF_PROFILE, Context.MODE_PRIVATE)
+        val migrateToAuto = !prefs.getBoolean("auto_default_v040", false)
         val legacyVertical = prefs.getBoolean("vertical", false)
-        val fallbackMode = if (legacyVertical) OrientationMode.PORTRAIT else OrientationMode.LANDSCAPE
-        val orientationMode = runCatching {
-            OrientationMode.valueOf(
-                prefs.getString("orientation_mode", fallbackMode.name) ?: fallbackMode.name
-            )
-        }.getOrDefault(fallbackMode)
+        val fallbackMode = OrientationMode.AUTO
+        val orientationMode = if (migrateToAuto) {
+            prefs.edit()
+                .putBoolean("auto_default_v040", true)
+                .putString("orientation_mode", OrientationMode.AUTO.name)
+                .apply()
+            OrientationMode.AUTO
+        } else {
+            runCatching {
+                OrientationMode.valueOf(
+                    prefs.getString("orientation_mode", fallbackMode.name) ?: fallbackMode.name
+                )
+            }.getOrDefault(if (legacyVertical) OrientationMode.PORTRAIT else fallbackMode)
+        }
         val resolvedVertical = when (orientationMode) {
             OrientationMode.AUTO -> currentDeviceIsPortrait()
             OrientationMode.PORTRAIT -> true
@@ -1291,7 +1416,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         val width: Int = 1920,
         val height: Int = 1080,
         val fps: Int = 60,
-        val orientationMode: OrientationMode = OrientationMode.LANDSCAPE,
+        val orientationMode: OrientationMode = OrientationMode.AUTO,
         val vertical: Boolean = false
     ) {
         val rotation: Int get() = if (vertical) 90 else 0
@@ -1344,6 +1469,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         private const val PREF_STREAM_CONFIG = "youtube_stream_config"
         private const val PREF_PROFILE = "youtube_stream_profile"
         private const val PREF_SOURCE_MODE = "stream_source_mode"
+        private const val PREF_HUD = "live_storm_hud"
         private const val DEFAULT_YOUTUBE_RTMPS =
             "rtmps://a.rtmps.youtube.com:443/live2"
     }
