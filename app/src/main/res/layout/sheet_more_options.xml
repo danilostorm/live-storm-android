@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/storm_bg"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Mais opções"
+        android:textColor="@color/white"
+        android:textSize="19sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/sheetSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Ferramentas do modo Normal"
+        android:textColor="@color/storm_muted"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/flashAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="16dp"
+        android:gravity="center_vertical"
+        android:text="⚡  FLASH" />
+
+    <TextView
+        android:id="@+id/proAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:text="PRO  CONTROLES DA LENTE" />
+
+    <TextView
+        android:id="@+id/overlayAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:text="WEB  OVERLAY POR URL" />
+
+    <TextView
+        android:id="@+id/gameAudioAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:text="ÁUDIO DO MODO GAMES"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/recordAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:text="●  GRAVAR CÓPIA LOCAL" />
+
+    <TextView
+        android:id="@+id/settingsAction"
+        style="@style/StreamChip"
+        android:layout_width="match_parent"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:text="⚙  DESTINO E CHAVE DO YOUTUBE" />
+
+</LinearLayout>
