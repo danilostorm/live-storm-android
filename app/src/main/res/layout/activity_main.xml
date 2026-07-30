@@ -17,17 +17,30 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <View
+        android:id="@+id/screenModeBackdrop"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@drawable/bg_games_preview"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <TextView
         android:id="@+id/screenModeOverlay"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginStart="30dp"
+        android:layout_marginEnd="30dp"
         android:background="@drawable/bg_glass_card"
         android:gravity="center"
         android:paddingStart="22dp"
-        android:paddingTop="16dp"
+        android:paddingTop="20dp"
         android:paddingEnd="22dp"
-        android:paddingBottom="16dp"
-        android:text="MODO GAMES • CAPTURA DA TELA&#10;O Live Storm não abre jogos. Autorize a captura e depois abra o jogo."
+        android:paddingBottom="20dp"
+        android:text="MODO GAMES PRONTO&#10;&#10;Ao iniciar, o Android solicitará autorização para transmitir a tela. Depois abra o jogo normalmente."
         android:textAlignment="center"
         android:textColor="@color/white"
         android:textSize="13sp"
@@ -36,12 +49,13 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.42" />
 
     <View
         android:id="@+id/topScrim"
         android:layout_width="0dp"
-        android:layout_height="180dp"
+        android:layout_height="160dp"
         android:background="@drawable/bg_top_scrim"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -50,12 +64,11 @@
     <View
         android:id="@+id/bottomScrim"
         android:layout_width="0dp"
-        android:layout_height="360dp"
+        android:layout_height="300dp"
         android:background="@drawable/bg_bottom_scrim"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
-
 
     <View
         android:id="@+id/focusIndicator"
@@ -66,24 +79,6 @@
         android:visibility="gone"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/hudToggleButton"
-        android:layout_width="52dp"
-        android:layout_height="42dp"
-        android:layout_marginStart="10dp"
-        android:background="@drawable/bg_icon_button"
-        android:contentDescription="Ocultar informações da tela"
-        android:elevation="12dp"
-        android:gravity="center"
-        android:text="HUD−"
-        android:textColor="@color/white"
-        android:textSize="10sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.48" />
 
     <LinearLayout
         android:id="@+id/topBar"
@@ -99,12 +94,12 @@
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
-  android:layout_width="42dp"
-  android:layout_height="42dp"
-  android:adjustViewBounds="true"
-  android:contentDescription="Live Storm"
-  android:scaleType="centerCrop"
-  android:src="@drawable/app_logo_badge" />
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="Live Storm"
+            android:scaleType="centerCrop"
+            android:src="@drawable/app_logo_badge" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -151,6 +146,7 @@
             android:layout_height="44dp"
             android:layout_marginStart="9dp"
             android:background="@drawable/bg_icon_button"
+            android:contentDescription="Configurações de transmissão"
             android:gravity="center"
             android:text="⚙"
             android:textColor="@color/white"
@@ -162,7 +158,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="18dp"
-        android:layout_marginTop="18dp"
+        android:layout_marginTop="16dp"
         android:background="@drawable/bg_glass_card"
         android:orientation="vertical"
         app:layout_constraintStart_toStartOf="parent"
@@ -174,7 +170,7 @@
             android:layout_height="wrap_content"
             android:text="00:00:00"
             android:textColor="@color/white"
-            android:textSize="24sp"
+            android:textSize="23sp"
             android:textStyle="bold" />
 
         <TextView
@@ -184,17 +180,17 @@
             android:layout_marginTop="3dp"
             android:text="Upload -- Mb/s"
             android:textColor="@color/storm_green"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/encoderFps"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
+            android:layout_marginTop="2dp"
             android:text="FPS real --"
             android:textColor="@color/storm_green"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <TextView
@@ -202,9 +198,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
-            android:text="1080p • 30 FPS • 16:9"
+            android:text="NORMAL • 1080p • 60 FPS • AUTO"
             android:textColor="@color/storm_muted"
-            android:textSize="11sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <LinearLayout
@@ -224,23 +220,11 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="@drawable/bg_icon_button"
+            android:contentDescription="Trocar câmera"
             android:gravity="center"
             android:text="↺"
             android:textColor="@color/white"
-            android:textSize="25sp"
-            android:contentDescription="Trocar câmera" />
-
-        <TextView
-            android:id="@+id/flashButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/bg_icon_button"
-            android:gravity="center"
-            android:text="⚡"
-            android:textColor="@color/white"
-            android:textSize="22sp"
-            android:contentDescription="Flash" />
+            android:textSize="25sp" />
 
         <TextView
             android:id="@+id/micButton"
@@ -248,50 +232,68 @@
             android:layout_height="48dp"
             android:layout_marginTop="10dp"
             android:background="@drawable/bg_icon_button"
+            android:contentDescription="Microfone"
             android:gravity="center"
             android:text="MIC"
             android:textColor="@color/white"
             android:textSize="10sp"
-            android:textStyle="bold"
-            android:contentDescription="Microfone" />
-
-        <TextView
-            android:id="@+id/zoomLabel"
-            android:layout_width="48dp"
-            android:layout_height="30dp"
-            android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:text="1.0×"
-            android:textColor="@color/storm_green"
-            android:textSize="11sp"
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/proButton"
+            android:id="@+id/moreOptionsButton"
             android:layout_width="48dp"
-            android:layout_height="44dp"
-            android:layout_marginTop="6dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
             android:background="@drawable/bg_icon_button"
+            android:contentDescription="Mais opções"
             android:gravity="center"
-            android:text="PRO"
+            android:text="•••"
             android:textColor="@color/white"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:contentDescription="Modo Pro da câmera" />
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/flashButton"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/zoomLabel"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/proButton"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/overlayButton"
-            android:layout_width="48dp"
-            android:layout_height="44dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_icon_button"
-            android:gravity="center"
-            android:text="WEB"
-            android:textColor="@color/white"
-            android:textSize="9sp"
-            android:textStyle="bold"
-            android:contentDescription="Overlay por URL" />
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:visibility="gone" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/hudToggleButton"
+        android:layout_width="58dp"
+        android:layout_height="38dp"
+        android:layout_marginStart="18dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_icon_button"
+        android:contentDescription="Ocultar informações da tela"
+        android:elevation="12dp"
+        android:gravity="center"
+        android:text="HUD−"
+        android:textColor="@color/white"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@id/controlPanel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_goneMarginBottom="18dp" />
 
     <LinearLayout
         android:id="@+id/controlPanel"
@@ -322,7 +324,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Qualidade da transmissão"
+                    android:text="Painel da transmissão"
                     android:textColor="@color/white"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -332,9 +334,10 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="O aparelho será verificado antes da live"
+                    android:maxLines="2"
+                    android:text="Pronto para configurar"
                     android:textColor="@color/storm_muted"
-                    android:textSize="10sp" />
+                    android:textSize="9sp" />
             </LinearLayout>
 
             <TextView
@@ -347,107 +350,10 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <HorizontalScrollView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:clipToPadding="false"
-            android:fillViewport="true"
-            android:scrollbars="none">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:id="@+id/resolution720Button"
-                    style="@style/StreamChip"
-                    android:text="720p" />
-
-                <TextView
-                    android:id="@+id/resolution1080Button"
-                    style="@style/StreamChip"
-                    android:layout_marginStart="7dp"
-                    android:text="1080p" />
-
-                <View
-                    android:layout_width="1dp"
-                    android:layout_height="25dp"
-                    android:layout_marginStart="12dp"
-                    android:layout_marginEnd="12dp"
-                    android:background="#35FFFFFF" />
-
-                <TextView
-                    android:id="@+id/fps30Button"
-                    style="@style/StreamChip"
-                    android:text="30 FPS" />
-
-                <TextView
-                    android:id="@+id/fps60Button"
-                    style="@style/StreamChip"
-                    android:layout_marginStart="7dp"
-                    android:text="60 FPS" />
-
-            </LinearLayout>
-        </HorizontalScrollView>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Orientação da live"
-            android:textColor="@color/storm_muted"
-            android:textSize="10sp"
-            android:textStyle="bold" />
-
-        <HorizontalScrollView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="7dp"
-            android:clipToPadding="false"
-            android:fillViewport="true"
-            android:scrollbars="none">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:id="@+id/autoOrientationButton"
-                    style="@style/StreamChip"
-                    android:text="AUTO" />
-
-                <TextView
-                    android:id="@+id/portraitOrientationButton"
-                    style="@style/StreamChip"
-                    android:layout_marginStart="7dp"
-                    android:text="RETRATO 9:16" />
-
-                <TextView
-                    android:id="@+id/landscapeOrientationButton"
-                    style="@style/StreamChip"
-                    android:layout_marginStart="7dp"
-                    android:text="PAISAGEM 16:9" />
-            </LinearLayout>
-        </HorizontalScrollView>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Tipo de live"
-            android:textColor="@color/storm_muted"
-            android:textSize="10sp"
-            android:textStyle="bold" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="7dp"
+            android:layout_marginTop="11dp"
             android:orientation="horizontal">
 
             <TextView
@@ -473,36 +379,143 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="5dp"
-            android:text="Live normal com câmera, zoom, foco Pro, flash, microfone e overlay."
+            android:maxLines="2"
+            android:text="Live normal com câmera e controles profissionais."
             android:textColor="@color/storm_muted"
             android:textSize="9sp" />
+
+        <TextView
+            android:id="@+id/qualityToggleButton"
+            style="@style/StreamChip"
+            android:layout_width="match_parent"
+            android:layout_marginTop="9dp"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="1080p • 60 FPS • AUTO    AJUSTAR" />
+
+        <LinearLayout
+            android:id="@+id/qualityOptionsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/resolution720Button"
+                        style="@style/StreamChip"
+                        android:text="720p" />
+
+                    <TextView
+                        android:id="@+id/resolution1080Button"
+                        style="@style/StreamChip"
+                        android:layout_marginStart="7dp"
+                        android:text="1080p" />
+
+                    <TextView
+                        android:id="@+id/fps30Button"
+                        style="@style/StreamChip"
+                        android:layout_marginStart="12dp"
+                        android:text="30 FPS" />
+
+                    <TextView
+                        android:id="@+id/fps60Button"
+                        style="@style/StreamChip"
+                        android:layout_marginStart="7dp"
+                        android:text="60 FPS" />
+                </LinearLayout>
+            </HorizontalScrollView>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:clipToPadding="false"
+                android:fillViewport="true"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/autoOrientationButton"
+                        style="@style/StreamChip"
+                        android:text="AUTO" />
+
+                    <TextView
+                        android:id="@+id/portraitOrientationButton"
+                        style="@style/StreamChip"
+                        android:layout_marginStart="7dp"
+                        android:text="RETRATO 9:16" />
+
+                    <TextView
+                        android:id="@+id/landscapeOrientationButton"
+                        style="@style/StreamChip"
+                        android:layout_marginStart="7dp"
+                        android:text="PAISAGEM 16:9" />
+                </LinearLayout>
+            </HorizontalScrollView>
+        </LinearLayout>
 
         <TextView
             android:id="@+id/gameAudioButton"
             style="@style/StreamChip"
             android:layout_width="match_parent"
-            android:layout_marginTop="7dp"
+            android:layout_marginTop="8dp"
             android:gravity="center"
             android:text="ÁUDIO: JOGO + MICROFONE"
             android:visibility="gone" />
 
-        <TextView
-            android:id="@+id/recordButton"
-            style="@style/StreamChip"
+        <LinearLayout
             android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:text="● REC LOCAL" />
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/recordButton"
+                style="@style/StreamChip"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="● REC LOCAL" />
+
+            <TextView
+                android:id="@+id/panelMoreOptionsButton"
+                style="@style/StreamChip"
+                android:layout_width="0dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="MAIS OPÇÕES" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/startStopButton"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:layout_marginTop="13dp"
+            android:layout_marginTop="11dp"
             android:background="@drawable/bg_live_button"
             android:gravity="center"
             android:letterSpacing="0.08"
-            android:text="●  INICIAR NO YOUTUBE"
+            android:text="●  INICIAR LIVE NORMAL"
             android:textColor="@color/white"
             android:textSize="15sp"
             android:textStyle="bold" />
