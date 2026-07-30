@@ -25,9 +25,12 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import com.hoststorm.livestorm.databinding.ActivityMainBinding
 import com.hoststorm.livestorm.databinding.DialogStreamSettingsBinding
+import com.hoststorm.livestorm.databinding.SheetMoreOptionsBinding
 import com.pedro.common.AudioCodec
 import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
@@ -67,6 +70,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     private var screenAudioMode = ScreenAudioMode.MIX
     private var cameraRecordFile: File? = null
     private var hudVisible = true
+    private var qualityExpanded = false
 
     private val timerHandler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -173,6 +177,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         updateConnectionLabel()
         updateSourceUi()
         restoreHudPreference()
+        updateQualityPanel()
 
         if (hasPermissionsForCurrentMode()) {
             if (sourceMode == SourceMode.CAMERA) prepareStream(showResult = false)
@@ -238,6 +243,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         }
         binding.gameAudioButton.setOnClickListener { showGameAudioDialog() }
         binding.recordButton.setOnClickListener { toggleLocalRecording() }
+        binding.moreOptionsButton.setOnClickListener { showMoreOptionsSheet() }
+        binding.panelMoreOptionsButton.setOnClickListener { showMoreOptionsSheet() }
+        binding.qualityToggleButton.setOnClickListener {
+            qualityExpanded = !qualityExpanded
+            updateQualityPanel()
+        }
         binding.hudToggleButton.setOnClickListener { toggleHud() }
     }
 
@@ -707,6 +718,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         }
         sourceMode = mode
         screenAudioMode = audioMode
+        qualityExpanded = false
         saveSourceMode()
         if (!hasPermissionsForCurrentMode()) {
             updateSourceUi()
@@ -724,44 +736,56 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         }
         updateSourceUi()
         updateProfileUi()
+        updateQualityPanel()
         updateStartButton()
     }
 
     private fun showScreenReady() {
+        binding.cameraPreview.visibility = View.GONE
+        binding.screenModeBackdrop.visibility = View.VISIBLE
         binding.screenModeOverlay.text =
-            "MODO GAMES • CAPTURA DA TELA\n" +
-                "O Live Storm não abre jogos. Autorize a captura e depois abra o jogo."
+            "MODO GAMES PRONTO\n\n" +
+                "Ao iniciar, o Android solicitará autorização para transmitir a tela. " +
+                "Depois abra o jogo normalmente."
         binding.screenModeOverlay.visibility =
             if (hudVisible && sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
         setStatus(Status.IDLE, "GAMES PRONTO")
         binding.capabilityHint.text = when (screenAudioMode) {
-            ScreenAudioMode.MIX -> "Games: áudio do jogo + microfone"
-            ScreenAudioMode.INTERNAL -> "Games: somente áudio interno do jogo"
-            ScreenAudioMode.MICROPHONE -> "Games: somente microfone"
+            ScreenAudioMode.MIX -> "Games • áudio do jogo + microfone"
+            ScreenAudioMode.INTERNAL -> "Games • somente áudio interno"
+            ScreenAudioMode.MICROPHONE -> "Games • somente microfone"
         }
     }
 
     private fun updateSourceUi() {
-        setChip(binding.normalModeButton, sourceMode == SourceMode.CAMERA)
-        setChip(binding.gamesModeButton, sourceMode == SourceMode.SCREEN)
-        binding.broadcastModeHint.text = if (sourceMode == SourceMode.CAMERA) {
-            "Live normal com câmera, zoom, foco Pro, flash, microfone e overlay."
+        val cameraMode = sourceMode == SourceMode.CAMERA
+        setChip(binding.normalModeButton, cameraMode)
+        setChip(binding.gamesModeButton, !cameraMode)
+
+        binding.cameraPreview.visibility = if (cameraMode) View.VISIBLE else View.GONE
+        binding.screenModeBackdrop.visibility = if (cameraMode) View.GONE else View.VISIBLE
+        binding.screenModeOverlay.visibility =
+            if (!cameraMode && hudVisible) View.VISIBLE else View.GONE
+
+        binding.broadcastModeHint.text = if (cameraMode) {
+            "Câmera com zoom, foco Pro, flash, microfone e overlay por URL."
         } else {
-            "Captura a tela do Android. O app não abre o jogo; você o abre após autorizar."
+            "Transmite a tela do Android. O Live Storm não abre nenhum jogo automaticamente."
         }
-        binding.gameAudioButton.visibility =
-            if (sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
+        binding.gameAudioButton.visibility = if (cameraMode) View.GONE else View.VISIBLE
         binding.gameAudioButton.text = when (screenAudioMode) {
             ScreenAudioMode.MIX -> "ÁUDIO: JOGO + MICROFONE"
             ScreenAudioMode.INTERNAL -> "ÁUDIO: SOMENTE JOGO"
             ScreenAudioMode.MICROPHONE -> "ÁUDIO: SOMENTE MICROFONE"
         }
-        binding.screenModeOverlay.visibility =
-            if (hudVisible && sourceMode == SourceMode.SCREEN) View.VISIBLE else View.GONE
-        binding.proButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
-        binding.proButton.isEnabled = sourceMode == SourceMode.CAMERA
-        binding.flashButton.alpha = if (sourceMode == SourceMode.CAMERA) 1f else 0.45f
-        binding.flashButton.isEnabled = sourceMode == SourceMode.CAMERA
+
+        binding.cameraTools.visibility = if (hudVisible) View.VISIBLE else View.GONE
+        binding.switchCameraButton.visibility = if (cameraMode) View.VISIBLE else View.GONE
+        binding.micButton.visibility = View.VISIBLE
+        binding.moreOptionsButton.visibility = View.VISIBLE
+        binding.proButton.isEnabled = cameraMode
+        binding.flashButton.isEnabled = cameraMode
+        updateQualityPanel()
     }
 
     private fun startScreenLive() {
@@ -880,23 +904,87 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         val visibility = if (hudVisible) View.VISIBLE else View.GONE
         binding.topBar.visibility = visibility
         binding.statsCard.visibility = visibility
-        binding.cameraTools.visibility = visibility
         binding.controlPanel.visibility = visibility
         binding.topScrim.visibility = visibility
         binding.bottomScrim.visibility = visibility
+        binding.cameraTools.visibility = visibility
+        binding.qualityOptionsContainer.visibility =
+            if (hudVisible && qualityExpanded) View.VISIBLE else View.GONE
+
         if (!hudVisible) {
             binding.screenModeOverlay.visibility = View.GONE
             binding.focusIndicator.visibility = View.GONE
         } else {
             updateSourceUi()
         }
+
+        binding.hudToggleButton.visibility = View.VISIBLE
+        binding.hudToggleButton.bringToFront()
         binding.hudToggleButton.text = if (hudVisible) "HUD−" else "HUD+"
-        binding.hudToggleButton.alpha = if (hudVisible) 0.72f else 1f
+        binding.hudToggleButton.alpha = if (hudVisible) 0.86f else 1f
         binding.hudToggleButton.contentDescription =
             if (hudVisible) "Ocultar informações da tela" else "Mostrar informações da tela"
         if (announce) {
-            showToast(if (hudVisible) "HUD exibido" else "HUD ocultado; toque em HUD+ para restaurar")
+            showToast(if (hudVisible) "Controles exibidos" else "HUD ocultado; toque em HUD+ para restaurar")
         }
+    }
+
+    private fun updateQualityPanel() {
+        val action = if (qualityExpanded) "FECHAR" else "AJUSTAR"
+        val orientation = when (profile.orientationMode) {
+            OrientationMode.AUTO -> "AUTO"
+            OrientationMode.PORTRAIT -> "RETRATO 9:16"
+            OrientationMode.LANDSCAPE -> "PAISAGEM 16:9"
+        }
+        binding.qualityToggleButton.text =
+            "${profile.resolutionLabel} • ${profile.fps} FPS • $orientation    $action"
+        binding.qualityOptionsContainer.visibility =
+            if (hudVisible && qualityExpanded) View.VISIBLE else View.GONE
+    }
+
+    private fun showMoreOptionsSheet() {
+        val sheetBinding = SheetMoreOptionsBinding.inflate(layoutInflater)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(sheetBinding.root)
+
+        val cameraMode = sourceMode == SourceMode.CAMERA
+        sheetBinding.sheetSubtitle.text = if (cameraMode) {
+            "Ferramentas profissionais da câmera"
+        } else {
+            "Ferramentas da transmissão de tela"
+        }
+        sheetBinding.flashAction.visibility = if (cameraMode) View.VISIBLE else View.GONE
+        sheetBinding.proAction.visibility = if (cameraMode) View.VISIBLE else View.GONE
+        sheetBinding.overlayAction.visibility = if (cameraMode) View.VISIBLE else View.GONE
+        sheetBinding.gameAudioAction.visibility = if (cameraMode) View.GONE else View.VISIBLE
+        sheetBinding.recordAction.text =
+            if (isAnyRecording()) "■  PARAR GRAVAÇÃO LOCAL" else "●  GRAVAR CÓPIA LOCAL"
+
+        sheetBinding.flashAction.setOnClickListener {
+            dialog.dismiss()
+            toggleFlash()
+        }
+        sheetBinding.proAction.setOnClickListener {
+            dialog.dismiss()
+            cameraProController.showProDialog()
+        }
+        sheetBinding.overlayAction.setOnClickListener {
+            dialog.dismiss()
+            overlayController.showDialog()
+        }
+        sheetBinding.gameAudioAction.setOnClickListener {
+            dialog.dismiss()
+            showGameAudioDialog()
+        }
+        sheetBinding.recordAction.setOnClickListener {
+            dialog.dismiss()
+            toggleLocalRecording()
+        }
+        sheetBinding.settingsAction.setOnClickListener {
+            dialog.dismiss()
+            showSettingsDialog()
+        }
+        dialog.show()
     }
 
     private fun showSettingsDialog() {
@@ -987,6 +1075,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
         binding.profileSummary.text =
             "$modeLabel • ${profile.resolutionLabel} • ${profile.fps} FPS • " +
                 "${profile.aspectLabel} • ${profile.bitrateLabel}"
+        updateQualityPanel()
     }
 
     private fun setChip(view: TextView, selected: Boolean) {
@@ -1158,7 +1247,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ScreenStreamService.Ca
     }
 
     private fun showToast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        val snackbar = Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG)
+        val anchor = if (hudVisible && binding.controlPanel.visibility == View.VISIBLE) {
+            binding.controlPanel
+        } else {
+            binding.hudToggleButton
+        }
+        snackbar.setAnchorView(anchor)
+        snackbar.view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)
+            ?.maxLines = 3
+        snackbar.show()
     }
 
     override fun onConnectionStarted(url: String) {

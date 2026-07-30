@@ -136,3 +136,13 @@ configuração ser adicionada, a transmissão direta por RTMPS e chave continua 
 - O modo Games nunca abre aplicativos: solicita a captura da tela e o usuário abre o jogo normalmente.
 - Áudio de Games configurável entre jogo + microfone, somente jogo ou somente microfone.
 - Permissões solicitadas conforme o modo: câmera não é exigida para transmitir a tela.
+
+## Live Storm 0.5.0
+
+- Interface principal reorganizada e compacta.
+- Modo Games usa fundo próprio e nunca exibe a câmera atrás.
+- HUD reposicionado acima do painel, sem cobrir controles.
+- Qualidade e orientação ficam em um painel recolhível.
+- Controles avançados foram movidos para uma folha inferior.
+- Avisos passaram a usar Snackbar e não bloqueiam os botões.
+
