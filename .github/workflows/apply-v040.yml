@@ -24,7 +24,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply professional HUD and modes
-        run: python tools/apply_v040.py
+        run: |
+          sed -i 's/re.subn(pattern, replacement, text/re.subn(pattern, lambda _: replacement, text/' tools/apply_v040.py
+          python tools/apply_v040.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
