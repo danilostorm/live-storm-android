@@ -1,0 +1,71 @@
+name: Build Live Storm OAuth v0.6.0
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/src/main/java/com/hoststorm/livestorm/YoutubeAuthActivity.kt'
+      - 'app/src/main/java/com/hoststorm/livestorm/YoutubeLiveApi.kt'
+      - 'app/src/main/res/layout/activity_youtube_auth.xml'
+      - 'app/src/main/AndroidManifest.xml'
+      - 'app/build.gradle.kts'
+      - 'tools/apply_youtube_auth_v060.py'
+      - '.github/workflows/youtube-oauth-v060.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout da branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Integrar OAuth na MainActivity
+        run: python tools/apply_youtube_auth_v060.py
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar Android SDK 36
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Configurar Gradle 9.4.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Compilar APK OAuth v0.6.0
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Publicar APK de teste
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-storm-v060-oauth-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Salvar integração na branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/hoststorm/livestorm/MainActivity.kt
+          if git diff --cached --quiet; then
+            echo 'Nenhuma alteração gerada'
+            exit 0
+          fi
+          git commit -m 'Integra OAuth YouTube à tela principal'
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
